@@ -16,7 +16,7 @@ public class StartServer {
 
 	public static void main(String[] args) {
 		try {
-			HttpServer server = JdkHttpServerFactory.createHttpServer(new URI("http://localhost:8080/rest"),
+			HttpServer server = JdkHttpServerFactory.createHttpServer(new URI("http://localhost:5000/rest"),
 					new ResourceConfig(EnvironmentDataResource.class));
 			JOptionPane.showMessageDialog(null, "Stop");
 			server.stop(0);

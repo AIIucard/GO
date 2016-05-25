@@ -6,16 +6,20 @@ import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
+import sun.util.logging.PlatformLogger.Level;
+
 public class Client {
 
 	public static void main(String[] args) throws Exception {
+		sun.util.logging.PlatformLogger.getLogger("sun.net.www.protocol.http.HttpURLConnection").setLevel(Level.ALL);
+		
 		doGet();
 		doPost();
 		doGet();
 	}
 	
 	public static void doGet() throws Exception {
-		URL url = new URL("http://localhost:8080/rest/environmentData");
+		URL url = new URL("http://localhost:5000/rest/environmentData");
 		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 		conn.setRequestMethod("GET");
 		conn.setRequestProperty("Accept", "application/json");
@@ -37,7 +41,7 @@ public class Client {
 	}
 
 	public static void doPost() throws Exception {
-		HttpURLConnection con = (HttpURLConnection) new URL("http://localhost:8080/rest/environmentData")
+		HttpURLConnection con = (HttpURLConnection) new URL("http://localhost:5000/rest/environmentData")
 				.openConnection();
 		con.setRequestProperty("Content-Type", "application/json");
 		con.setRequestMethod("POST");
