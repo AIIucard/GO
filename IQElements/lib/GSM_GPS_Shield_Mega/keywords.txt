@@ -1,0 +1,28 @@
+#######################################
+# Syntax Coloring Map For GSM_Shield
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+GSM_GPRS_GPS			KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+initializeGSM			KEYWORD2
+sendSMS					KEYWORD2
+makeCall					KEYWORD2
+gps						KEYWORD2
+gsm						KEYWORD2
+getGPS					KEYWORD2
+gps_data					KEYWORD2
+mode						KEYWORD2
+coordinates				KEYWORD2
+transfer					KEYWORD2
+Spi						KEYWORD2
+
+
+
