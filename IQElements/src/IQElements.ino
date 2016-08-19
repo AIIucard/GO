@@ -73,7 +73,7 @@ void setup() {
     Serial.println("<");
   }
 
-  GSM.setClock();
+  //GSM.setClock();
 }
 
 void loop() {
@@ -86,9 +86,9 @@ void loop() {
 
   // GPS initialization
   if(GPS.initializeGPS())
-  Serial.println("Initialization completed");
+  Serial.println("GPS Initialization completed");
   else
-  Serial.println("Initialization can't completed");
+  Serial.println("GPS Initialization can't completed");
   GPS.getGPS();                                           // get the current gps coordinates
   // GPS-LED
   if(GPS.coordinates[0] == 'n') {                                            // valid gps signal yet
@@ -108,8 +108,9 @@ void loop() {
     GPS.setLED(0);
   }
 
-  root["longitude"] = GPS.longitude;
-  root["latitude"] = GPS.latitude;
+  root["längengrad"] = GPS.longitude;
+  root["breitengrad"] = GPS.latitude;
+  root["cdb_classname"] = "cdb_sensordaten";
 
   //get current data from open weathermap
   char openWeatherUrl[250];
@@ -118,43 +119,44 @@ void loop() {
   dtostrf(8.5780000, 9, 7, str_lon);
   dtostrf(53.5420000, 9, 7, str_lan);
 
-  sprintf(openWeatherUrl, "/data/2.5/weather?lon=%s&lat=%s&units=metric&APPID=226487074b292a9461c9e8bf6d5e78dd", str_lon, str_lan);
-  GSM.sendHTTPGET("api.openweathermap.org", openWeatherUrl, 80);
-  char* messageBody = strstr(GSM.GSM_string, "\r\n\r\n");
+  // sprintf(openWeatherUrl, "/data/2.5/weather?lon=%s&lat=%s&units=metric&APPID=226487074b292a9461c9e8bf6d5e78dd", str_lon, str_lan);
+  // GSM.sendHTTPGET("api.openweathermap.org", openWeatherUrl, 80);
+  // char* messageBody = strstr(GSM.GSM_string, "\r\n\r\n");
+  //
+  // Serial.println(GSM.GSM_string);
+  // Serial.println();
 
-  Serial.println(GSM.GSM_string);
-  Serial.println();
-
-  if (messageBody){
-    Serial.println("Message body found");
-    char jsonMessage[500];
-    char* startJson = strpbrk(messageBody, "{");
-    char* endJson = strrchr(messageBody, '}');
-    Serial.println(endJson);
-    if (strstr(endJson - 1, "}}")){
-      strlcpy(jsonMessage, startJson, (endJson - startJson) + 1);
-    }
-    else {
-
-      strlcpy(jsonMessage, startJson, (endJson - startJson) + 2);
-    }
-
-
-    Serial.println(jsonMessage);
-    Serial.println();
-  }
+  // if (messageBody){
+  //   Serial.println("Message body found");
+  //   char jsonMessage[500];
+  //   char* startJson = strpbrk(messageBody, "{");
+  //   char* endJson = strrchr(messageBody, '}');
+  //   Serial.println(endJson);
+  //   if (strstr(endJson - 1, "}}")){
+  //     strlcpy(jsonMessage, startJson, (endJson - startJson) + 1);
+  //   }
+  //   else {
+  //
+  //     strlcpy(jsonMessage, startJson, (endJson - startJson) + 2);
+  //   }
+  //
+  //
+  //   Serial.println(jsonMessage);
+  //   Serial.println();
+  // }
 
   digitalWrite(CS1, HIGH);
   if (DHT11.read(DHT11PIN) == DHTLIB_OK) {
-    root["humidity"] = DHT11.humidity;
-    root["temperature"] = DHT11.temperature;
+    root["luftfeuchtigkeit"] = DHT11.humidity;
+    root["temperatur"] = DHT11.temperature;
   }
 
   //send message to server
-  // char body[200] = "";
-  // sprintf(body, "{\"temperature\" : %d, \"humidity\" : %d}", DHT11.temperature, DHT11.humidity);
-  // GSM.sendHTTP_POST_JSON("88.71.33.250", "/rest/environmentData", 5000, body);
-  // Serial.println(GSM.GSM_string);
+  char body[400];
+  memset(body, 0, 400);
+  root.printTo(body, sizeof(body));
+  GSM.sendHTTP_POST_JSON("piwik.contact.de", "/api/v1/collection/cdb_sensordaten", 8080, body);
+  Serial.println(GSM.GSM_string);
 
   // open the file. note that only one file can be open at a time,
   // so you have to close this one before opening another.

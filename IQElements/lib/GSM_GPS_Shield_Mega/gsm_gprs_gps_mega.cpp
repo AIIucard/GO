@@ -757,9 +757,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50],const char USER[30],const cha
   return 0;																							  // ERROR ... no GPRS connect
 }
 
-int GSM_GPRS_Class::sendHTTP_POST_JSON(char server[50], char url[200], int port, char body[200]) {
-  int time = 0;
-
+int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* body) {
   state = 0;
   do
   {
@@ -775,6 +773,9 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char server[50], char url[200], int port,
 
   if(state == 1)
   {
+    Serial.print("ContentLength: ");
+    Serial.println(strlen(body));
+
     // for HTTP GET must include: "GET /subdirectory/name.php?test=parameter_to_transmit HTTP/1.1"
     // for example to use with "www.antrax.de/WebServices/responderlist.html":
     // "GET /WebServices/responder.php?test=HelloWorld HTTP/1.1"
@@ -785,15 +786,24 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char server[50], char url[200], int port,
     // Header Field Definitions in http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html
     _HardSerial.print("\r\nHost: ");                                               // Header Field "Host"
     _HardSerial.print(server);
-    _HardSerial.print("\r\nUser-Agent: arduino");                                   // Header Field "User-Agent" (MUST be "antrax" when use with portal "WebServices")
+
+    _HardSerial.print("\r\nUser-Agent: python-requests/2.11.1");                                   // Header Field "User-Agent" (MUST be "antrax" when use with portal "WebServices")
+    _HardSerial.print("\r\nAuthorization: Basic Y2FkZG9rOg==");
     _HardSerial.print("\r\nConnection: close");                            // Header Field "Connection"
     _HardSerial.print("\r\nContent-type: application/json");
-    _HardSerial.print("\r\nContent-length: 200\r\n\r\n");                            // Header Field "Connection"
+    _HardSerial.print("\r\nContent-length: ");                            // Header Field "Connection"
+    _HardSerial.print(strlen(body));
+
+    _HardSerial.print("\r\n\r\n");
     _HardSerial.print(body);
 
     _HardSerial.write(26);                                                         // CTRL-Z
 
-    if(WaitOfReaction(20000) == 8) { state += 1; } else { state = 1000; }     // Congratulations ... the parameter_string was send to the server
+    //WaitOfReaction(20000);
+    state += 1;
+    //if(WaitOfReaction(20000) == 8) { state += 1; } else { state = 1000; }     // Congratulations ... the parameter_string was send to the server
+    //_HardSerial.write("AT#SH=1\r");
+    //WaitOfReaction(20000);
   }
 
   if(state == 2)
@@ -803,6 +813,7 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char server[50], char url[200], int port,
 
   if(state == 3)
   {
+
     return 1;																					  // HTTP GET successfully ... let's go ahead!
   }
 
