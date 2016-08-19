@@ -74,6 +74,9 @@ public:
   int  RingStatus();
   int  pickUp();
 
+  int  setClock();
+  int  getTime();
+
   int  numberofSMS();
   int  readSMS(int index);
   int  deleteSMS(int index);

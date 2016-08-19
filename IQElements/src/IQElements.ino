@@ -72,6 +72,8 @@ void setup() {
     Serial.print  (GSM.GSM_string);                                         //    here is the explanation
     Serial.println("<");
   }
+
+  GSM.setClock();
 }
 
 void loop() {
