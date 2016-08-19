@@ -299,6 +299,59 @@ int GSM_GPRS_Class::pickUp()
   return 0;                                                                     // ERROR
 }
 
+/*
+Check Telit_Modules_Software_User_Guide_r16: 3.3 Automatic Data/Time updating
+*/
+int GSM_GPRS_Class::setClock()
+{
+  state = 0;
+  do {
+    if(state == 0)
+    {
+      _HardSerial.print("AT#NITZ?\r");
+      if(WaitOfReaction(1000) == 1) { state += 1; } else { state = 1000; }
+    }
+
+    if(state == 1)
+    {
+      _HardSerial.print("AT#NITZ=15,1\r");
+      if(WaitOfReaction(1000) == 1) { state += 1; } else { state = 1000; }
+    }
+
+    if(state == 2)
+    {
+      _HardSerial.print("AT&W0\r");
+      if(WaitOfReaction(1000) == 1) { state += 1; } else { state = 1000; }
+    }
+
+    if(state == 3)
+    {
+      _HardSerial.print("AT&P0\r");
+      if(WaitOfReaction(1000) == 1) { return 1; } else { state = 1000; }
+    }
+  } while(state <= 999);
+
+  return 0;
+}
+
+/*
+Check Telit_Modules_Software_User_Guide_r16: 3.8.5.2. Read current date and time
+*/
+int GSM_GPRS_Class::getTime()
+{
+  state = 0;
+  do {
+    if(state == 0)
+    {
+      _HardSerial.print("AT+CCLK?\r");
+      if(WaitOfReaction(1000) == 1) { return 1; } else { state = 1000; }
+    }
+  } while(state <= 999);
+
+  return 0;
+}
+
+
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 Send a SMS
