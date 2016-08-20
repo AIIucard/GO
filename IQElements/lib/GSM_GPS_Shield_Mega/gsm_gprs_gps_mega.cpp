@@ -758,69 +758,137 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50],const char USER[30],const cha
 }
 
 int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* body) {
-  state = 0;
-  do
-  {
-    if(state == 0)
-    {																									  // See "Telit_AT_Commands_Reference_Guide_r15.pdf", page 391
-    _HardSerial.print("AT#SD=1,0,");		    						  		           // Execution command opens a remote TCP connection via socket
-    _HardSerial.print(port);
-    _HardSerial.print(",\"");
-    _HardSerial.print(server);
-    _HardSerial.print("\",0\r");
-    if(WaitOfReaction(140000UL) == 9) { state += 1; } else { state = 1000; }  // need CONNECT
+  memset(GSM_string, 0, BUFFER_SIZE);
+  //wait until all outgoing data is sent
+  _HardSerial.flush();
+
+  //clear incoming data buffer
+  while(_HardSerial.available() > 0) { _HardSerial.read(); }
+
+  //Opening the socket connection
+  // AT#SD = <Conn Id>,<Protocol>, <Remote Port>, <IP address> [, <Closure Type> [, <Local Port>]]
+  // Where:
+  //  Conn Id is the connection identifier.
+  //  Protocol is 0 for TCP and 1 for UDP.
+  //  Remote Port is the port of the remote machine.
+  //  IP address is the remote address.
+  _HardSerial.print("AT#SD=1,0,");
+  _HardSerial.print(port);
+  _HardSerial.print(",\"");
+  _HardSerial.print(server);
+  _HardSerial.print("\",0\r");
+
+  //wait until all outgoing data is sent
+  _HardSerial.flush();
+  _HardSerial.setTimeout(10000);
+
+  //get response from modem
+  char buf[1];
+  char response[100];
+  int numBytes = 0;
+
+  memset(buf, 0, 1);
+  memset(response, 0, 100);
+  numBytes = _HardSerial.readBytes(buf, 1);
+  if (numBytes){
+    _HardSerial.setTimeout(30);
+    for (int i = 0; i < 100 && numBytes; ++i){
+      response[i] = buf[0];
+      memset(buf, 0, 1);
+      numBytes = _HardSerial.readBytes(buf, 1);
+    }
   }
 
-  if(state == 1)
-  {
-    Serial.print("ContentLength: ");
-    Serial.println(strlen(body));
+  //response should be "CONNECT"
+  if (!strstr(response, "CONNECT")){
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
 
-    // for HTTP GET must include: "GET /subdirectory/name.php?test=parameter_to_transmit HTTP/1.1"
-    // for example to use with "www.antrax.de/WebServices/responderlist.html":
-    // "GET /WebServices/responder.php?test=HelloWorld HTTP/1.1"
-    _HardSerial.print("POST ");
-    _HardSerial.print(url);                                           // Message-Text
-    _HardSerial.print(" HTTP/1.1");
+  //send the HTTP message
+  _HardSerial.print("POST ");
+  _HardSerial.print(url);
+  _HardSerial.print(" HTTP/1.1\r\n");
 
-    // Header Field Definitions in http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html
-    _HardSerial.print("\r\nHost: ");                                               // Header Field "Host"
-    _HardSerial.print(server);
+  _HardSerial.print("Host: ");
+  _HardSerial.print(server);
+  _HardSerial.print("\r\n");
 
-    _HardSerial.print("\r\nUser-Agent: python-requests/2.11.1");                                   // Header Field "User-Agent" (MUST be "antrax" when use with portal "WebServices")
-    _HardSerial.print("\r\nAuthorization: Basic Y2FkZG9rOg==");
-    _HardSerial.print("\r\nConnection: close");                            // Header Field "Connection"
-    _HardSerial.print("\r\nContent-type: application/json");
-    _HardSerial.print("\r\nContent-length: ");                            // Header Field "Connection"
-    _HardSerial.print(strlen(body));
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");                                   // Header Field "User-Agent" (MUST be "antrax" when use with portal "WebServices")
+  _HardSerial.print("Authorization: Basic Y2FkZG9rOg==\r\n");
+  _HardSerial.print("Connection: close\r\n");                            // Header Field "Connection"
+  _HardSerial.print("Content-type: application/json\r\n");
+  _HardSerial.print("Content-length: ");                            // Header Field "Connection"
+  _HardSerial.print(strlen(body));
 
-    _HardSerial.print("\r\n\r\n");
-    _HardSerial.print(body);
+  _HardSerial.print("\r\n\r\n");
+  _HardSerial.print(body);
+  //wait for transmission
+  _HardSerial.flush();
 
-    _HardSerial.write(26);                                                         // CTRL-Z
+  //read answer
+  _HardSerial.setTimeout(10000);
 
-    //WaitOfReaction(20000);
-    state += 1;
-    //if(WaitOfReaction(20000) == 8) { state += 1; } else { state = 1000; }     // Congratulations ... the parameter_string was send to the server
-    //_HardSerial.write("AT#SH=1\r");
-    //WaitOfReaction(20000);
+  memset(buf, 0, 1);
+  numBytes = _HardSerial.readBytes(buf, 1);
+  if (numBytes){
+    _HardSerial.setTimeout(30);
+    for (int i = 0; i < BUFFER_SIZE && numBytes; ++i){
+      GSM_string[i] = buf[0];
+      memset(buf, 0, 1);
+      numBytes = _HardSerial.readBytes(buf, 1);
+    }
   }
 
-  if(state == 2)
-  {
-    if(WaitOfReaction(20000) == 6) { state += 1; } else { state = 1000; }     // wait of NO CARRIER
+  //clear incoming data buffer
+  while(_HardSerial.available() > 0) { _HardSerial.read(); }
+
+  //Exit data mode with escape sequence
+  delay(300);
+  _HardSerial.print("+++");
+  _HardSerial.flush();
+  _HardSerial.setTimeout(1000);
+  memset(buf, 0, 1);
+  memset(response, 0, 100);
+  numBytes = _HardSerial.readBytes(buf, 1);
+  if (numBytes){
+    _HardSerial.setTimeout(30);
+    for (int i = 0; i < 100 && numBytes; ++i){
+      response[i] = buf[0];
+      memset(buf, 0, 1);
+      numBytes = _HardSerial.readBytes(buf, 1);
+    }
+  }
+  Serial.print("Try to suspending socket: ");
+  Serial.print(response);
+
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  _HardSerial.setTimeout(1000);
+  memset(buf, 0, 1);
+  memset(response, 0, 100);
+  numBytes = _HardSerial.readBytes(buf, 1);
+  if (numBytes){
+    _HardSerial.setTimeout(30);
+    for (int i = 0; i < 100 && numBytes; ++i){
+      response[i] = buf[0];
+      memset(buf, 0, 1);
+      numBytes = _HardSerial.readBytes(buf, 1);
+    }
   }
 
-  if(state == 3)
-  {
-
-    return 1;																					  // HTTP GET successfully ... let's go ahead!
+  if (!strstr(response, "OK")){
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
   }
+  Serial.print(F("Socket closed: "));
+  Serial.print(response);
 
-}
-while(state <= 999);
-
-return 0;																							  // ERROR ... no GPRS connect
+  return 1;
 }
 
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
