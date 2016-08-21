@@ -102,6 +102,7 @@ public:
 private:
   int  WaitOfReaction(long int timeout);
   int  WaitOfDownload(long int timeout);
+  void readResponseIntoBuffer(char* buffer, size_t bufferSize, long timeout);
   HardwareSerial& _HardSerial;
 };
 

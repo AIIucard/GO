@@ -757,6 +757,33 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50],const char USER[30],const cha
   return 0;																							  // ERROR ... no GPRS connect
 }
 
+/*
+Reads the modems response into the given buffer.
+Waits up to "timout" milliseconds to retrieve the first byte from the modem
+*/
+void GSM_GPRS_Class::readResponseIntoBuffer(char* buffer, size_t bufferSize, long timeout){
+  char byteBuf[1];
+  int bytesRead = 0;
+
+  memset(buffer, 0, bufferSize);
+  memset(byteBuf, 0, 1);
+
+  _HardSerial.setTimeout(timeout);
+
+  bytesRead = _HardSerial.readBytes(byteBuf, 1);
+  if (bytesRead > 0){
+    _HardSerial.setTimeout(30);
+    for (unsigned int i = 0; i < bufferSize && bytesRead > 0; ++i){
+      buffer[i] = byteBuf[0];
+      memset(byteBuf, 0, 1);
+      bytesRead = _HardSerial.readBytes(byteBuf, 1);
+    }
+  }
+}
+
+/*
+Send a HTTP POST Request to the given server
+*/
 int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* body) {
   memset(GSM_string, 0, BUFFER_SIZE);
   //wait until all outgoing data is sent
@@ -780,24 +807,10 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* 
 
   //wait until all outgoing data is sent
   _HardSerial.flush();
-  _HardSerial.setTimeout(10000);
 
   //get response from modem
-  char buf[1];
   char response[100];
-  int numBytes = 0;
-
-  memset(buf, 0, 1);
-  memset(response, 0, 100);
-  numBytes = _HardSerial.readBytes(buf, 1);
-  if (numBytes){
-    _HardSerial.setTimeout(30);
-    for (int i = 0; i < 100 && numBytes; ++i){
-      response[i] = buf[0];
-      memset(buf, 0, 1);
-      numBytes = _HardSerial.readBytes(buf, 1);
-    }
-  }
+  readResponseIntoBuffer(response, sizeof(response), 1000);
 
   //response should be "CONNECT"
   if (!strstr(response, "CONNECT")){
@@ -829,64 +842,40 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* 
   //wait for transmission
   _HardSerial.flush();
 
-  //read answer
-  _HardSerial.setTimeout(10000);
-
-  memset(buf, 0, 1);
-  numBytes = _HardSerial.readBytes(buf, 1);
-  if (numBytes){
-    _HardSerial.setTimeout(30);
-    for (int i = 0; i < BUFFER_SIZE && numBytes; ++i){
-      GSM_string[i] = buf[0];
-      memset(buf, 0, 1);
-      numBytes = _HardSerial.readBytes(buf, 1);
-    }
-  }
+  //read HTTP answer
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 2000);
 
   //clear incoming data buffer
   while(_HardSerial.available() > 0) { _HardSerial.read(); }
 
-  //Exit data mode with escape sequence
-  delay(300);
-  _HardSerial.print("+++");
-  _HardSerial.flush();
-  _HardSerial.setTimeout(1000);
-  memset(buf, 0, 1);
-  memset(response, 0, 100);
-  numBytes = _HardSerial.readBytes(buf, 1);
-  if (numBytes){
-    _HardSerial.setTimeout(30);
-    for (int i = 0; i < 100 && numBytes; ++i){
-      response[i] = buf[0];
-      memset(buf, 0, 1);
-      numBytes = _HardSerial.readBytes(buf, 1);
-    }
-  }
-  Serial.print("Try to suspending socket: ");
-  Serial.print(response);
-
-  _HardSerial.print("AT#SH=1\r");
-  _HardSerial.flush();
-  _HardSerial.setTimeout(1000);
-  memset(buf, 0, 1);
-  memset(response, 0, 100);
-  numBytes = _HardSerial.readBytes(buf, 1);
-  if (numBytes){
-    _HardSerial.setTimeout(30);
-    for (int i = 0; i < 100 && numBytes; ++i){
-      response[i] = buf[0];
-      memset(buf, 0, 1);
-      numBytes = _HardSerial.readBytes(buf, 1);
-    }
-  }
+  //Exit data mode with escape sequence +++
+  //try as hard as possible with while loop >.>
+  unsigned int numToTry = 20;
+  do {
+    _HardSerial.print("+++\r");
+    _HardSerial.flush();
+    readResponseIntoBuffer(response, sizeof(response), 1000);
+  } while (strstr(response, "OK") || --numToTry > 0);
 
   if (!strstr(response, "OK")){
-    Serial.print(F("ERROR: Socket connection was not closed properly: "));
-    Serial.println(response);
+    Serial.println(F("ERROR: Failed to exit data mode"));
     return -1;
   }
-  Serial.print(F("Socket closed: "));
-  Serial.print(response);
+
+  Serial.println(F("Exited socket data mode, try to close socket now"));
+
+  numToTry = 20;
+  do {
+    _HardSerial.print("AT#SH=1\r");
+    _HardSerial.flush();
+    readResponseIntoBuffer(response, sizeof(response), 1000);
+  } while (strstr(response, "OK") || --numToTry > 0);
+
+  if (!strstr(response, "OK")){
+    Serial.println(F("ERROR: Socket connection was not closed properly"));
+    return -1;
+  }
+  Serial.print(F("Socket closed, everything went fine :)"));
 
   return 1;
 }
@@ -921,7 +910,6 @@ The public variable "GSM_string" contains the last response from the mobile modu
 */
 int GSM_GPRS_Class::sendHTTPGET(char server[50], char parameter_string[200], int port)
 {
-  int time = 0;
 
   state = 0;
   do
@@ -1446,9 +1434,6 @@ int GSM_GPRS_Class::WaitOfReaction(long int timeout)
 
   return 0;
 }
-
-
-
 
 //####################################################################################################################################################
 //----------------------------------------------------------------------------------------------------------------------------------------------------

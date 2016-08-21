@@ -29,8 +29,10 @@ void setup() {
   digitalWrite(CS2, LOW);
   while (!SD.begin(53)) {
     Serial.println(F("Initialization for SD failed"));
-    delay(2000);
+    delay(1000);
   }
+  Serial.println(F("Initialization for SD completed"));
+
   //read configuration from SD card
   StaticJsonBuffer<300> jsonBuffer;
   char fileBuf[300];
@@ -40,37 +42,43 @@ void setup() {
       fileBuf[i] = configFile.read();
     }
   }
-  //TODO: check if file is read completly
+  //TODO: check somehow if file is read completly
   JsonObject& config = jsonBuffer.parseObject(fileBuf);
 
   //timeout time from config
   if (config.containsKey("timeoutInMillis")) {
     timeoutInMillis = config[F("timeoutInMillis")];
   }
+  Serial.print(F("Use loop interval of: "));
+  Serial.println(timeoutInMillis);
 
+  //code to init shield
   digitalWrite(CS2, HIGH);
-
-  Serial.println(F("Initialization for SD completed"));
 
   GSM.begin();
   delay(1000);
 
   digitalWrite(CS1, LOW);
-
-  if (GSM.initialize(config[F("PIN")].asString()) == 0)                                              // => everything ok?
-  {
-    Serial.print  (F("ME Init error: >"));                                         // => no! Error during GSM initialising
-    Serial.print  (GSM.GSM_string);                                             //    here is the explanation
-    Serial.println(F("<"));
+  if (config.containsKey("PIN")) {
+    if (GSM.initialize(config[F("PIN")].asString()) == 0)                                              // => everything ok?
+    {
+      Serial.print  (F("ME Init error: >"));                                         // => no! Error during GSM initialising
+      Serial.print  (GSM.GSM_string);                                             //    here is the explanation
+      Serial.println(F("<"));
+      delay(100);
+    }
+  } else {
+    Serial.println(F("ERROR: No PIN available, check config file"));
   }
   digitalWrite(CS1, HIGH);
 
   while (GSM.connectGPRS(config[F("APN")].asString(),
-  config[F("USER")].asString(), config[F("PASSWORD")].asString()) == 0)  // => everything ok?
+    config[F("USER")].asString(), config[F("PASSWORD")].asString()) == 0)  // => everything ok?
   {
     Serial.print  (F("GPRS Init error: >"));                                   // => no! Error during GPRS initialising
     Serial.print  (GSM.GSM_string);                                         //    here is the explanation
     Serial.println(F("<"));
+    delay(100);
   }
 
   //GSM.setClock();
@@ -95,7 +103,7 @@ void loop() {
   //just debug info
   Serial.println(F("DEBUG: Following data is gathered"));
   root.printTo(Serial);
-  Serial.println(F("---------------------------------"));
+  Serial.println(F("\r\n---------------------------------"));
 
   //last but not least send data to zimt server
   sendMessageToZimt(root);
@@ -112,12 +120,12 @@ void sendMessageToZimt(JsonObject& root){
   char body[400];
   memset(body, 0, 400);
   root.printTo(body, sizeof(body));
+  //TODO api from config
   int response = GSM.sendHTTP_POST_JSON("piwik.contact.de", "/api/v1/collection/cdb_sensordaten", 8080, body);
   if (response == 1){
     Serial.println(GSM.GSM_string);
   }
 }
-
 
 void readTemperatureAndHumidity(JsonObject& root){
   digitalWrite(CS1, HIGH);
