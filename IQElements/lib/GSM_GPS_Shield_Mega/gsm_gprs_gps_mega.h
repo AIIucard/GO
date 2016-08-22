@@ -82,10 +82,6 @@ public:
   int  deleteSMS(int index);
   int  sendSMS(char number[50], char text[180]);
 
-  int  dialCall(char number[50]);
-  int  sendDTMF(char dtmf);
-  int  exitCall();
-
   int  EMAILconfigureSMTP(char SMTP[50], char USER[30], char PWD[30]);
   int  EMAILconfigureSender(char SENDEREMAIL[30]);
   int  EMAILsend(char RECIPIENT[30] ,char TITLE[30], char BODY[200]);

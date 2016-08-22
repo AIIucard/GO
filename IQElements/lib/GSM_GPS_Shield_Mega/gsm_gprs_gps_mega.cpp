@@ -549,117 +549,6 @@ int GSM_GPRS_Class::deleteSMS(int index)
   return 0;                                                                     // ERROR while deleting a SMS
 }
 
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------------------------------
-Start Voicecall
-Parameter:
-char number[50] = Call number of the recipient (national or international format)
-
-ATTENTION: The SIM card must be suited or enabled for "Voice". Not all SIM cards
-(for example M2M "machine-to-machine" SIM cards) are automatically enabled!!!
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile module
-*/
-int GSM_GPRS_Class::dialCall(char number[50])
-{
-  state = 0;
-  do
-  {
-    if(state == 0)
-    {
-      _HardSerial.print("AT+CREG?\r");                                               // Network Registration Report
-      if(WaitOfReaction(1000) == 4) { state += 1; } else { state = 1000; }
-    }
-
-    if(state == 1)
-    {
-      _HardSerial.print("AT#DIALMODE=1\r");                                          // 1 � (voice call only) OK result code is received
-      // only after the called party answers. Any character
-      // typed aborts the call and OK result code is received.
-      if(WaitOfReaction(1000) == 1) { state += 1; } else { state = 1000; }
-    }
-
-    if(state == 2)
-    {
-      _HardSerial.print("ATD ");                                                     // dial number (see "Telit_AT_Commands_Reference_Guide_r15.pdf", page 69)
-      _HardSerial.print(number);
-      _HardSerial.print(";\r");
-      WaitOfReaction(30000);
-      state += 1;
-    }
-
-    if(state == 3)
-    {
-      _HardSerial.print("AT+CLCC\r");                                                // List current calls of ME
-      if(WaitOfReaction(1000) == 1)
-      { return 1; }                                                             // Congratulations ...
-      else
-      { return 0; }                                                             // ERROR
-    }
-  }
-  while(state <= 999);
-
-  return 0;                                                                     // ERROR while dialing
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Send a DTMF-tone
-Parameter:
-char dtmf = ASCII characters 0-9, #, *, A-D
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile module
-*/
-int GSM_GPRS_Class::sendDTMF(char dtmf)													  // (see "Telit_AT_Commands_Reference_Guide_r15.pdf", page 174)
-{
-  state = 0;
-  do
-  {
-    if(state == 0)
-    {
-      _HardSerial.print("AT+VTS=");                                                  // send a DTMF tone/string
-      _HardSerial.print(dtmf);
-      _HardSerial.print("\r");
-      if(WaitOfReaction(2000) == 1)
-      { return 1; }                                                             // OK
-      else
-      { return 0; }                                                             // ERROR while sending a DTMF tone
-    }
-  }
-  while(state <= 999);
-
-  return 0;                                                                     // ERROR while sending a DTMF tone
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-End Voicecall
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile module
-*/
-int GSM_GPRS_Class::exitCall()
-{
-  state = 0;
-  do
-  {
-    if(state == 0)
-    {
-      _HardSerial.print("ATH\r");                                               	  // Hang up!
-      if(WaitOfReaction(2000) == 1)
-      { return 1; }                                                             // OK
-      else
-      { return 0; }                                                             // ERROR while sending a ATH
-    }
-  }
-  while(state <= 999);
-
-  return 0;                                                                     // ERROR while sending a ATH
-}
-
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 //-- G P R S + T C P / I P ---------------------------------------------------------------------------------------------------------------------------
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -808,9 +697,10 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* 
   //wait until all outgoing data is sent
   _HardSerial.flush();
 
+  delay(2000); //need to wait 1 seconds
   //get response from modem
   char response[100];
-  readResponseIntoBuffer(response, sizeof(response), 1000);
+  readResponseIntoBuffer(response, sizeof(response), 4000);
 
   //response should be "CONNECT"
   if (!strstr(response, "CONNECT")){
@@ -850,12 +740,10 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* 
 
   //Exit data mode with escape sequence +++
   //try as hard as possible with while loop >.>
-  unsigned int numToTry = 20;
-  do {
-    _HardSerial.print("+++\r");
-    _HardSerial.flush();
-    readResponseIntoBuffer(response, sizeof(response), 1000);
-  } while (strstr(response, "OK") || --numToTry > 0);
+  _HardSerial.print("+++"); //no linefeed here!
+  _HardSerial.flush();
+  delay(2000); //need to wait 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 1000);
 
   if (!strstr(response, "OK")){
     Serial.println(F("ERROR: Failed to exit data mode"));
@@ -863,16 +751,14 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char* server, char* url, int port, char* 
   }
 
   Serial.println(F("Exited socket data mode, try to close socket now"));
-
-  numToTry = 20;
-  do {
-    _HardSerial.print("AT#SH=1\r");
-    _HardSerial.flush();
-    readResponseIntoBuffer(response, sizeof(response), 1000);
-  } while (strstr(response, "OK") || --numToTry > 0);
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000); //need to wait 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 2000);
 
   if (!strstr(response, "OK")){
-    Serial.println(F("ERROR: Socket connection was not closed properly"));
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
     return -1;
   }
   Serial.print(F("Socket closed, everything went fine :)"));

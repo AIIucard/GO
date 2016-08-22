@@ -14,6 +14,8 @@ dht11 DHT11;
 GSM_GPRS_Class GSM(Serial1);
 GPS_Class GPS(Serial1);
 int timeoutInMillis = 2000; // overwrite with settings
+char str_lon[12];
+char str_lan[12];
 
 void setup() {
   Serial.println(F("Entering setup"));
@@ -65,7 +67,7 @@ void setup() {
       Serial.print  (F("ME Init error: >"));                                         // => no! Error during GSM initialising
       Serial.print  (GSM.GSM_string);                                             //    here is the explanation
       Serial.println(F("<"));
-      delay(100);
+      delay(1000);
     }
   } else {
     Serial.println(F("ERROR: No PIN available, check config file"));
@@ -78,7 +80,7 @@ void setup() {
     Serial.print  (F("GPRS Init error: >"));                                   // => no! Error during GPRS initialising
     Serial.print  (GSM.GSM_string);                                         //    here is the explanation
     Serial.println(F("<"));
-    delay(100);
+    delay(1000);
   }
 
   //GSM.setClock();
@@ -115,6 +117,7 @@ void loop() {
   delay(timeoutInMillis);
 }
 
+//TODO: we need to check if the connection is still OK and try to reconnect if not
 void sendMessageToZimt(JsonObject& root){
   //send message to server
   char body[400];
@@ -155,17 +158,47 @@ void readGPS(JsonObject& root){
     GPS.setLED(0);
   }
 
-  root["laengengrad"] = GPS.longitude;
-  root["breitengrad"] = GPS.latitude;
+  //convert GPS coordinates to decimal
+  //TODO: trim the char arrays somehow...
+  //not that easy because if we manipulate the start of the pointer we might run into problems
+  //so instead of manipulating str_lon and str_lan pointers, create another pointer with offset?
+  memset(str_lon, 0, 12);
+  memset(str_lan, 0, 12);
+  dtostrf(getDecimalCoordinate(GPS.longitude), 7, 4, str_lon);
+  dtostrf(getDecimalCoordinate(GPS.latitude), 7, 4, str_lan);
+
+  root["laengengrad"] = str_lon;
+  root["breitengrad"] = str_lan;
+}
+
+//awkward way to convert coordinate to decimals.. wunderful char pointers..
+float getDecimalCoordinate(char* coord){
+  //use a copy because strtok manipulates the memory
+  char coordCopy[20];
+  strcpy(coordCopy, coord);
+
+  char delimiter1[] = " ";
+  char *ptr;
+  float degrees = 0;
+
+  ptr = strtok(coordCopy, delimiter1);
+  if (ptr != NULL){
+    //first token
+    degrees = atof(ptr);
+    char delimiter2[] = "ENWS";
+    ptr = strtok(NULL, delimiter2);
+    if (ptr != NULL){
+      //second token
+      degrees += (atof(ptr) / 60.0);
+    }
+  }
+
+  return degrees;
 }
 
 void retrieveOpenWeatherMapData(){
   //get current data from open weathermap
   char openWeatherUrl[250];
-  char str_lon[12];
-  char str_lan[12];
-  dtostrf(8.5780000, 9, 7, str_lon);
-  dtostrf(53.5420000, 9, 7, str_lan);
 
   //TODO: API Key from Config
   sprintf(openWeatherUrl, "/data/2.5/weather?lon=%s&lat=%s&units=metric&APPID=226487074b292a9461c9e8bf6d5e78dd", str_lon, str_lan);
