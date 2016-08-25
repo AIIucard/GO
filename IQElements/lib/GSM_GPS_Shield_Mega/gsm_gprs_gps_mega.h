@@ -63,6 +63,7 @@ class GSM_GPRS_Class
 public:
   // Variables
   char GSM_string[BUFFER_SIZE];
+  char Json_Time_String[20];
 
   // Constructor
   GSM_GPRS_Class(HardwareSerial& serial);

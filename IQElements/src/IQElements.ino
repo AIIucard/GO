@@ -78,6 +78,7 @@ void loop() {
   root["cdb_classname"] = "cdb_sensordaten";
 
   readTemperatureAndHumidity(root);
+  readTimestamp(root);
 
   // use shield
   digitalWrite(CS2, HIGH);
@@ -171,7 +172,13 @@ void sendMessageToZimt(JsonObject &root) {
   }
 }
 
-void readTemperatureAndHumidity(JsonObject &root) {
+void readTimestamp(JsonObject& root){
+  GSM.getTime();
+  root[F("datum")] = GSM.Json_Time_String;
+}
+
+void readTemperatureAndHumidity(JsonObject& root){
+  digitalWrite(CS1, HIGH);
   if (DHT11.read(DHT11PIN) == DHTLIB_OK) {
     root[F("luftfeuchtigkeit")] = DHT11.humidity;
     root[F("temperatur")] = DHT11.temperature;

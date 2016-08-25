@@ -391,7 +391,36 @@ int GSM_GPRS_Class::getTime() {
   do {
     if (state == 0) {
       _HardSerial.print("AT+CCLK?\r");
-      if (WaitOfReaction(1000) == 1) {
+      if(WaitOfReaction(1000) == 1)
+      {
+        //2016-08-19T00:00:00
+
+        // +CCLK: "16/08/25,11:27:52+08"
+        // 01234567890123456789012345678
+        // 0         1         2
+
+        Serial.println(GSM_string);
+
+        Json_Time_String[0] = '2';
+        Json_Time_String[1] = '0';
+        Json_Time_String[2] = GSM_string[10];
+        Json_Time_String[3] = GSM_string[11];
+        Json_Time_String[4] = '-';
+        Json_Time_String[5] = GSM_string[13];
+        Json_Time_String[6] = GSM_string[14];
+        Json_Time_String[7] = '-';
+        Json_Time_String[8] = GSM_string[16];
+        Json_Time_String[9] = GSM_string[17];
+        Json_Time_String[10] = 'T';
+        Json_Time_String[11] = GSM_string[19];
+        Json_Time_String[12] = GSM_string[20];
+        Json_Time_String[13] = ':';
+        Json_Time_String[14] = GSM_string[22];
+        Json_Time_String[15] = GSM_string[23];
+        Json_Time_String[16] = ':';
+        Json_Time_String[17] = GSM_string[25];
+        Json_Time_String[18] = GSM_string[26];
+        Json_Time_String[19] = '\0';
         return 1;
       } else {
         state = 1000;
