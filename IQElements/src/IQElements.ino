@@ -96,6 +96,7 @@ void loop() {
 
   readGPS(root);
   readTemperatureAndHumidity(root);
+  readTimestamp(root);
 
   //TODO: activate when POST to Zimt is fixed
   //retrieveOpenWeatherMapData();
@@ -128,6 +129,11 @@ void sendMessageToZimt(JsonObject& root){
   if (response == 1){
     Serial.println(GSM.GSM_string);
   }
+}
+
+void readTimestamp(JsonObject& root){
+  GSM.getTime();
+  root[F("datum")] = GSM.Json_Time_String;
 }
 
 void readTemperatureAndHumidity(JsonObject& root){
