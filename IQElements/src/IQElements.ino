@@ -5,6 +5,7 @@
 #include <SPI.h>
 #include <dht11.h>
 #include <gsm_gprs_gps_mega.h>
+#include <Time.h>
 
 #define DHT11PIN 22
 #define CS1 52 // SD Card
@@ -65,8 +66,9 @@ void setup() {
     delay(1000);
   }
 
-  while (connectToGPRS() == 0)
-    ;
+  while (connectToGPRS() == 0);
+
+  // setTime();
 
   Serial.println("CONNTECTED TO GPRS YAY");
 
@@ -82,7 +84,7 @@ void loop() {
   root["cdb_classname"] = "cdb_sensordaten";
 
   readTemperatureAndHumidity(root);
-  readTimestamp(root);
+  // readTimestamp(root);
 
   // use shield
   digitalWrite(CS2, HIGH);
@@ -176,9 +178,137 @@ void sendMessageToZimt(JsonObject &root) {
   }
 }
 
-void readTimestamp(JsonObject& root){
+void setTime(){
   GSM.getTime();
-  root[F("datum")] = GSM.Json_Time_String;
+
+  char second[3];
+  char minute[3];
+  char hour[3];
+  char day[3];
+  char month[3];
+  char year[5];
+
+  int seconds;
+  int minutes;
+  int hours;
+  int days;
+  int months;
+  int years;
+
+  year[0] = '2';
+  year[1] = '0';
+  year[2] = GSM.GSM_string[10];
+  year[3] = GSM.GSM_string[11];
+  year[4] = '\0';
+
+  month[0] = GSM.GSM_string[13];
+  month[1] = GSM.GSM_string[14];
+  month[2] = '\0';
+
+  day[0] = GSM.GSM_string[16];
+  day[1] = GSM.GSM_string[17];
+  day[2] = '\0';
+
+  hour[0] = GSM.GSM_string[19];
+  hour[1] = GSM.GSM_string[20];
+  hour[2] = '\0';
+
+  minute[0] = GSM.GSM_string[22];
+  minute[1] = GSM.GSM_string[23];
+  minute[2] = '\0';
+
+  second[0] = GSM.GSM_string[25];
+  second[1] = GSM.GSM_string[26];
+  second[2] = '\0';
+
+  sscanf(second, "%d", &seconds);
+  sscanf(minute, "%d", &minutes);
+  sscanf(hour, "%d", &hours);
+  sscanf(day, "%d", &days);
+  sscanf(month, "%d", &months);
+  sscanf(year, "%d", &years);
+
+  setTime(hours, minutes, seconds, days, months, years);
+}
+
+void readTimestamp(JsonObject& root){
+
+  char Json_Time_String[20];
+
+  int seconds = second();
+  int minutes = minute();
+  int hours = hour();
+  int days = day();
+  int months = month();
+  int years = year();
+
+  char second[3];
+  char minute[3];
+  char hour[3];
+  char day[3];
+  char month[3];
+  char year[5];
+
+  // sprintf(second, "%d", seconds);
+  // sprintf(minute, "%d", minutes);
+  // sprintf(hour, "%d", hours);
+  // sprintf(day, "%d", days);
+  // sprintf(month, "%d", months);
+  // sprintf(year, "%d", years);
+
+  if(second[1] == '\0')
+  {
+    second[1] = second[0];
+    second[0] = '0';
+    second[2] = '\0';
+  }
+  if(minute[1] == '\0')
+  {
+    minute[1] = minute[0];
+    minute[0] = '0';
+    minute[2] = '\0';
+  }
+  if(hour[1] == '\0')
+  {
+    hour[1] = hour[0];
+    hour[0] = '0';
+    hour[2] = '\0';
+  }
+  if(day[1] == '\0')
+  {
+    day[1] = day[0];
+    day[0] = '0';
+    day[2] = '\0';
+  }
+  if(month[1] == '\0')
+  {
+    month[1] = month[0];
+    month[0] = '0';
+    month[2] = '\0';
+  }
+
+  Json_Time_String[0] = year[0];
+  Json_Time_String[1] = year[1];
+  Json_Time_String[2] = year[2];
+  Json_Time_String[3] = year[3];
+  Json_Time_String[4] = '-';
+  Json_Time_String[5] = month[0];
+  Json_Time_String[6] = month[1];
+  Json_Time_String[7] = '-';
+  Json_Time_String[8] = day[0];
+  Json_Time_String[9] = day[1];
+  Json_Time_String[10] = 'T';
+  Json_Time_String[11] = hour[0];
+  Json_Time_String[12] = hour[1];
+  Json_Time_String[13] = ':';
+  Json_Time_String[14] = minute[0];
+  Json_Time_String[15] = minute[1];
+  Json_Time_String[16] = ':';
+  Json_Time_String[17] = second[0];
+  Json_Time_String[18] = second[1];
+  Json_Time_String[19] = '\0';
+
+  root[F("datum")] = Json_Time_String;
 }
 
 void readTemperatureAndHumidity(JsonObject& root){
