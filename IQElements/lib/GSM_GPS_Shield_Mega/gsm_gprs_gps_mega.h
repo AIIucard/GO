@@ -69,37 +69,22 @@ public:
   GSM_GPRS_Class(HardwareSerial& serial);
 
   // Functions
-  void begin();
+  int  begin();
   int  initialize(const char simpin[4]);
   int  Status();
-  int  RingStatus();
-  int  pickUp();
 
   int  setClock();
   int  getTime();
 
-  int  numberofSMS();
-  int  readSMS(int index);
-  int  deleteSMS(int index);
-  int  sendSMS(char number[50], char text[180]);
-
-  int  EMAILconfigureSMTP(char SMTP[50], char USER[30], char PWD[30]);
-  int  EMAILconfigureSender(char SENDEREMAIL[30]);
-  int  EMAILsend(char RECIPIENT[30] ,char TITLE[30], char BODY[200]);
-
   int  connectGPRS(const char APN[50], const char USER[30], const char PWD[50]);
   int  sendHTTPGET(char server[50], char url[200], int port);
   int  sendHTTP_POST_JSON(char server[50], char parameter_string[200], int port, char body[500]);
-  int  FTPopen(char HOST[50], int PORT, char USER[30], char PASS[30]);
-  int  FTPdownload(char PATH[50], char FILENAME[50]);
-  int  FTPclose();
-  int  sendPING(char server[50]);
   void disconnectGPRS();
 
 private:
   int  WaitOfReaction(long int timeout);
-  int  WaitOfDownload(long int timeout);
   void readResponseIntoBuffer(char* buffer, size_t bufferSize, long timeout);
+  bool checkIfContains(char* buffer, const char* expected);
   HardwareSerial& _HardSerial;
 };
 

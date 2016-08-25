@@ -39,7 +39,7 @@ GSM_GPRS_Class::GSM_GPRS_Class(HardwareSerial &serial) : _HardSerial(serial) {}
 Setting of the used signals / Contacts between Arduino mainboard and the
 GSM/GPRS/GPS - Shield
 */
-void GSM_GPRS_Class::begin() {
+int GSM_GPRS_Class::begin() {
   //  pinMode(GSM_RXD, INPUT);
   //  pinMode(GSM_TXD, OUTPUT);
   pinMode(GSM_RING, INPUT);
@@ -50,7 +50,65 @@ void GSM_GPRS_Class::begin() {
 
   pinMode(SHIELD_POWER_ON, OUTPUT);
   pinMode(TESTPIN, OUTPUT);
+
+  _HardSerial.begin(9600); // 9600 Baud
+  _HardSerial.flush();
+
+  digitalWrite(SHIELD_POWER_ON,
+               HIGH); // GSM_ON = HIGH = switch on + Serial Line enable
+
+  char response[50];
+
+  // Start sequence ("Telit_GE865-QUAD_Hardware_User_Guide_r15.pdf", page 16)
+  delay(1500);               // wait for 1500ms
+  _HardSerial.print("AT\r"); // send the first "AT"
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  _HardSerial.print("AT+IPR=9600\r"); // set Baudrate
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  _HardSerial.print("ATE0\r"); // disable Echo
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  _HardSerial.print("AT#SELINT=2\r"); // Select Interface Style
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  _HardSerial.print("AT#SIMDET=1\r"); // SIM detect!
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  // Query SIM Status (disables the unsolicited indication)
+  _HardSerial.print("AT#QSS=0\r");
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  _HardSerial.print("AT+CMEE=2\r"); // Report Mobile Equipment Error
+  readResponseIntoBuffer(response, sizeof(response), 3000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  return 1;
 }
+
+bool GSM_GPRS_Class::checkIfContains(char *buffer, const char *expected) {
+  if (!strstr(buffer, expected)) {
+    Serial.print("ERROR: ");
+    Serial.println(buffer);
+    return false;
+  }
+  return true;
+}
+
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
 Initialisation of the GSM/GPRS/GPS - Shield:
 - Set data rate
@@ -63,142 +121,37 @@ Return value = 1 ---> OK
 The public variable "GSM_string" contains the last response from the mobile
 module
 */
-
 int GSM_GPRS_Class::initialize(const char simpin[4]) {
-  int time;
+  char response[100];
+  Serial.println("Check if sim pin is needed");
+  delay(2000);
+  _HardSerial.print("AT+CPIN?\r"); // SIM pin need?
+  readResponseIntoBuffer(response, sizeof(response), 3000);
 
-  _HardSerial.begin(9600); // 9600 Baud
-  _HardSerial.flush();
+  if (checkIfContains(response, "SIM PIN")){
+    Serial.println("Sim pin needed");
+    //sim pin is Needed
+    _HardSerial.print("AT+CPIN="); // enter pin   (SIM)
+    _HardSerial.print(simpin);
+    _HardSerial.print("\r");
 
-  digitalWrite(SHIELD_POWER_ON,
-               HIGH); // GSM_ON = HIGH = switch on + Serial Line enable
-
-  // Start sequence ("Telit_GE865-QUAD_Hardware_User_Guide_r15.pdf", page 16)
-  delay(1500);               // wait for 1500ms
-  _HardSerial.print("AT\r"); // send the first "AT"
-  delay(50);                 // ignore the answer
-
-  _HardSerial.print("AT+IPR=9600\r"); // set Baudrate
-  delay(100);                         // ignore the answer
-
-  state = 0;
-  time = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("ATE0\r"); // disable Echo
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
+    readResponseIntoBuffer(response, sizeof(response), 5000);
+    if (!checkIfContains(response, "OK")){
+      return -1;
     }
+    Serial.println("Sim pin entered");
+    Serial.println(response);
+  } else if (!checkIfContains(response, "READY")){
+    Serial.println("Unknown answer");
+    return -1;
+  }
 
-    if (state == 1) {
-      _HardSerial.print("AT#SELINT=2\r"); // Select Interface Style
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
+  Serial.println("Disable flow control");
+  _HardSerial.print("AT&K0\r"); // disable Flowcontrol
+  if (!checkIfContains(response, "OK"))
+    return -1;
 
-    if (state == 2) {
-      _HardSerial.print("AT#SIMDET=1\r"); // SIM detect!
-      time = 0;
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-      delay(2000);
-    }
-
-    if (state == 3) {
-      _HardSerial.print("AT#QSS=0\r"); // Query SIM Status (disables the
-                                       // unsolicited indication)
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 4) {
-      _HardSerial.print("AT+CMEE=2\r"); // Report Mobile Equipment Error
-      if (WaitOfReaction(3000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 5) {
-      delay(1000);
-      _HardSerial.print("AT+CPIN?\r"); // SIM pin need?
-      switch (WaitOfReaction(1000)) {
-      case 2:
-        state += 1;
-        break; // get +CPIN: SIM PIN
-      case 3:
-        state += 2;
-        break;   // get +CPIN: READY
-      case 11: { // get +CME ERROR
-        delay(1000);
-        if (time++ < 10) {
-          state = state; // stay in this state until timeout
-        } else {
-          state = 1000; // after 10 sek. not registered
-        }
-        break;
-      }
-      default:
-        _HardSerial.println("Serious SIM-error!");
-        while (1)
-          ; // ATTENTION: check your SIM!!!! Don't restart the software!!!
-      }
-    }
-
-    if (state == 6) {
-      _HardSerial.print("AT+CPIN="); // enter pin   (SIM)
-      _HardSerial.print(simpin);
-      _HardSerial.print("\r");
-      time = 0;
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 7) {
-      _HardSerial.print("AT&K0\r"); // disable Flowcontrol
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 8) {
-      _HardSerial.print("AT+CREG?\r"); // Network Registration Report
-      if (WaitOfReaction(1000) == 4) {
-        state += 1; // get: Registered in home network or roaming
-      } else {
-        delay(1000);
-        if (time++ < 60) {
-          state = state; // stay in this state until timeout
-        } else {
-          state = 1000; // after 60 sec. not registered
-        }
-      }
-    }
-
-    if (state == 9) {
-      return 1; // Registered successfully ... let's go ahead!
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR ... no Registration in the network
+  return 1;
 }
 
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -220,12 +173,12 @@ int GSM_GPRS_Class::Status() {
   char response[100];
 
   _HardSerial.print("AT+CREG?\r");
-  readResponseIntoBuffer(response, sizeof(response), 2000);
+  readResponseIntoBuffer(response, sizeof(response), 5000);
 
   Serial.print(F("AT+CREG: "));
   Serial.println(response);
   if (!strstr(response, "+CREG: 0,1")) {
-    return 2;
+    return -1;
   }
 
   _HardSerial.print("AT+CGREG?\r");
@@ -234,153 +187,37 @@ int GSM_GPRS_Class::Status() {
   Serial.print(F("AT+CGREG: "));
   Serial.println(response);
 
-  if (!strstr(response, "OK")) {
-    return 1;
-  }
+  if (!checkIfContains(response, "OK"))
+    return -1;
 
   return 1;
-
-  // state = 0;
-  // do
-  // {
-  //   if(state == 0)
-  //   {
-  //     _HardSerial.print("AT+CREG?\r"); // Query register state of GSM network
-  //     WaitOfReaction(1000);
-  //     strcpy(Status_string, GSM_string);
-  //     state += 1;
-  //   }
-  //
-  //   if(state == 1)
-  //   {
-  //     _HardSerial.print("AT+CGREG?\r");
-  //     // Query register state of GPRS network
-  //     WaitOfReaction(1000);
-  //     strcat(Status_string, GSM_string);
-  //     state += 1;
-  //   }
-  //
-  //   if(state == 2)
-  //   {
-  //     _HardSerial.print("AT+CSQ\r"); // Query the RF signal strength
-  //     WaitOfReaction(1000);
-  //     strcat(Status_string, GSM_string);
-  //     state += 1;
-  //   }
-  //
-  //   if(state == 3)
-  //   {
-  //     _HardSerial.print("AT+COPS?\r"); // Query the current selected operator
-  //     WaitOfReaction(1000);
-  //     strcat(Status_string, GSM_string);
-  //     state += 1;
-  //   }
-  //
-  //   if(state == 4)
-  //   {
-  //     strcpy(GSM_string, Status_string);
-  //     return 1;
-  //   }
-  // }
-  // while(state <= 999);
-  //
-  // return 0; // ERROR while dialing
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Detect if there is an incoming call
-
-Return value = 0 ---> there was no incoming call in the last 5 seconds
-Return value = 1 ---> there is a RING currently
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::RingStatus() {
-  state = 0;
-  do {
-    if (state == 0) {
-      if (WaitOfReaction(5000) == 11) // 11 = "RING" detected
-      {
-        return 1;
-      } // Congratulations ... ME rings
-      else {
-        return 0;
-      } // "no one ever calls!"
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-"Pick-up the phone" = Accept Voicecall
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::pickUp() {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("ATA\r"); // Answers an incoming call
-      if (WaitOfReaction(1000) == 1) {
-        return 1;
-      } // Congratulations ... you are through
-      else {
-        return 0;
-      } // ERROR
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR
 }
 
 /*
 Check Telit_Modules_Software_User_Guide_r16: 3.3 Automatic Data/Time updating
 */
 int GSM_GPRS_Class::setClock() {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#NITZ?\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
+  char response[100];
 
-    if (state == 1) {
-      _HardSerial.print("AT#NITZ=15,1\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
+  // enable full data/time updating
+  _HardSerial.print("AT#NITZ=15,1\r");
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
 
-    if (state == 2) {
-      _HardSerial.print("AT&W0\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
+  // enable full data/time updating
+  _HardSerial.print("AT&W0\r");
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
 
-    if (state == 3) {
-      _HardSerial.print("AT&P0\r");
-      if (WaitOfReaction(1000) == 1) {
-        return 1;
-      } else {
-        state = 1000;
-      }
-    }
-  } while (state <= 999);
+  // enable full data/time updating
+  _HardSerial.print("AT&P0\r");
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
 
-  return 0;
+  return 1;
 }
 
 /*
@@ -391,9 +228,8 @@ int GSM_GPRS_Class::getTime() {
   do {
     if (state == 0) {
       _HardSerial.print("AT+CCLK?\r");
-      if(WaitOfReaction(1000) == 1)
-      {
-        //2016-08-19T00:00:00
+      if (WaitOfReaction(1000) == 1) {
+        // 2016-08-19T00:00:00
 
         // +CCLK: "16/08/25,11:27:52+08"
         // 01234567890123456789012345678
@@ -431,225 +267,6 @@ int GSM_GPRS_Class::getTime() {
   return 0;
 }
 
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-//----------------------------------------------------------------------------------------------------------------------------------------------------
-Send a SMS
-Parameter:
-char number[50] = Call number of the destination (national or international
-format)
-char text[180] = Text of the SMS (ASCII-Text)
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module (the message reference number)
-*/
-int GSM_GPRS_Class::sendSMS(char number[50], char text[180]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT+CREG?\r"); // Network Registration Report
-      if (WaitOfReaction(1000) == 4) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT+CMGF=1\r"); // use text-format for SMS
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 2) {
-      _HardSerial.print("AT+CMGS=\""); // send Message
-      _HardSerial.print(number);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(5000) == 5) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // get the prompt ">"
-    }
-
-    if (state == 3) {
-      _HardSerial.print(text); // Message-Text
-      _HardSerial.write(26);   // CTRL-Z
-      if (WaitOfReaction(5000) == 1) {
-        return 1;
-      } // Congratulations ... the SMS is gone
-      // GSM_string contains the message reference number
-      else {
-        return 0;
-      } // ERROR while sending a SMS
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR while sending a SMS
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Determine number of SMS stored on the SIM card
-
-ATTENTION: The return value contains the "total number" of stored SMS! The index
-of the most recent SMS
-is possibly higher, if SMS in the "lower" part from the list have already been
-deleted!
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::numberofSMS() {
-  int numberofSMS;
-
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT+CPMS?\r"); // Preferred SMS message storage
-      if (WaitOfReaction(1000) == 13) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 1) {
-      // string to analyse e.g.: +CPMS: "SM",3,20,"SM",3,20,"SM",3,20
-      // look for the parameter between the first two ","
-      // (how "strtok" works -->
-      // http://www.cplusplus.com/reference/cstring/strtok/)
-      char *s = strtok(GSM_string, ",");
-      s = strtok(NULL, ",");
-      numberofSMS = atoi(s);
-
-      return numberofSMS;
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR while sending a SMS
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Read SMS stored on the SIM card
-Parameter "index" = 0       --->  write *all* SMS in succession in the string
-"GSM_string"
-Parameter "index" = 1 .. n  --->  write SMS with the indicated index in the
-string "GSM_string"
-
-ATTENTION: Please note length of "GSM_string" - adjust if necessary
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::readSMS(int index) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT+CREG?\r"); // Network Registration Report
-      if (WaitOfReaction(1000) == 4) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT+CMGF=1\r"); // use text-format for SMS
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 2) {
-      if (index == 0) {
-        _HardSerial.print("AT+CMGL=\"ALL\"\r"); // read *all* SMS messages
-      } else {
-        _HardSerial.print("AT+CMGR="); // read SMS message (page 88)
-        _HardSerial.print(index);      // index range = 1 ... x
-        _HardSerial.print("\r");
-      }
-      if (WaitOfReaction(1000) == 1)
-      // the SMS message is in "GSM_string" now
-      {
-        return 1;
-      } // Congratulations ... the SMS with the given index is read
-      else {
-        return 0;
-      } // ERROR while reading a SMS
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR while reading a SMS
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Delete SMS stored on the SIM card
-Parameter "index" = 0       --->  delete *all* SMS from the SIM card
-Parameter "index" = 1 .. n  --->  delete SMS with the indicated index
-
-ATTENTION: Potential risk!
-If single SMS are deleted, the highest index (= index of the latest SMS)
-possibly does not correspond anymore
-with the number of the in total stored SMS
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::deleteSMS(int index) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT+CREG?\r"); // Network Registration Report
-      if (WaitOfReaction(1000) == 4) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT+CMGF=1\r"); // use text-format for SMS
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      }
-    }
-
-    if (state == 2) {
-      if (index == 0) {
-        _HardSerial.print("AT+CMGD=1,4\r"); // Ignore the value of index and
-                                            // delete *all* SMS messages
-      } else {
-        _HardSerial.print(
-            "AT+CMGD="); // delete the SMS with the given index (page 84)
-        _HardSerial.print(index); // index range = 1 ... x
-        _HardSerial.print("\r");
-      }
-      if (WaitOfReaction(1000) == 1) {
-        return 1;
-      } // Congratulations ... the SMS is/are deleted
-      else {
-        return 0;
-      } // ERROR while deleting a SMS
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR while deleting a SMS
-}
-
 //----------------------------------------------------------------------------------------------------------------------------------------------------
 //-- G P R S + T C P / I P
 //---------------------------------------------------------------------------------------------------------------------------
@@ -682,9 +299,10 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
                                 const char PWD[50]) {
   int time = 0;
 
-  state = 0;
+  state = 1;
   do {
     if (state == 0) {
+      Serial.println("check creg status");
       _HardSerial.print("AT+CREG?\r"); // Network Registration Report
       if (WaitOfReaction(1000) == 4) {
         state += 1;
@@ -695,6 +313,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
 
     if (state == 1) // Judge network?
     {
+      Serial.println("try attach to GPRS service");
       _HardSerial.print("AT+CGATT?\r"); // attach to GPRS service?
       if (WaitOfReaction(1000) == 7)    // need +CGATT: 1
       {
@@ -710,6 +329,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
     }
 
     if (state == 2) {
+      Serial.println("try to define context");
       _HardSerial.print("AT+CGDCONT=1,\"IP\",\""); // Define PDP Context
       _HardSerial.print(APN);
       _HardSerial.print("\"");
@@ -722,6 +342,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
     }
 
     if (state == 3) {
+      Serial.println("configure user");
       _HardSerial.print("AT#USERID=\""); // Configure Authentication User ID
       _HardSerial.print(USER);
       _HardSerial.print("\"\r");
@@ -733,6 +354,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
     }
 
     if (state == 4) {
+      Serial.println("configure password");
       _HardSerial.print("AT#PASSW=\""); // Configure Authentication Password
       _HardSerial.print(PWD);
       _HardSerial.print("\"\r");
@@ -744,6 +366,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
     }
 
     if (state == 5) {
+      Serial.println("try to activate context");
       _HardSerial.print("AT#SGACT=1,1\r"); // Context Activation
       if (WaitOfReaction(150000) == 1) {
         state += 1;
@@ -753,6 +376,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
     }
 
     if (state == 6) {
+      Serial.println("Context activation ok");
       return 1; // GPRS connect successfully ... let's go ahead!
     }
   } while (state <= 999);
@@ -995,53 +619,6 @@ int GSM_GPRS_Class::sendHTTPGET(char server[50], char parameter_string[200],
 }
 
 /*----------------------------------------------------------------------------------------------------------------------------------------------------
-Send PING
-Ping is a diagnostic function, which is used to check whether a given host can
-be reached via GPRS.
-The complete description of the PING command (AT#PING) can be viewed here:
-"Telit_AT_Commands_Reference_Guide_r15.pdf", page 454
-
-Parameter:
-char server[50] = address of the remote host, string type. This parameter can be
-either:
-- any valid IP address in the format: �xxx.xxx.xxx.xxx�
-- any host name to be solved with a DNS query (= URL)
-
-ATTENTION: Before send PING Request the GPRS context must have been activated by
-AT#SGACT=1,1.
-
-For testing, a well-to-reach server can be specified, e.g. "www.google.com"
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::sendPING(char server[50]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#PING=\""); // send a Ping
-      _HardSerial.print(server);
-      _HardSerial.print("\",1\r");
-      if (WaitOfReaction(20000) == 1) {
-        if (strstr(GSM_string, "600,255")) {
-          return 0; // Note1: when the Echo Request timeout expires
-          // (no reply received on time) the response will contain
-          // <replyTime> set to 600 and <ttl> set to 255
-        } else {
-          return 1; // Congratulations ... receive the corresponding Echo Reply
-        }
-      } else {
-        return 0;
-      } // ERROR, the DNS query failed
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR ...
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
 Disconnect GPRS connection
 
 ATTENTION: The frequent disconnection and rebuilding of GPRS connections can
@@ -1066,360 +643,6 @@ void GSM_GPRS_Class::disconnectGPRS() {
       } // need OK
     }
   } while (state <= 999);
-}
-
-//----------------------------------------------------------------------------------------------------------------------------------------------------
-//-- E-M A I L
-//---------------------------------------------------------------------------------------------------------------------------------------
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Setting up the SMTP-Server (outgoing mail server) to be used
-
-Parameter:
-char SMTP[50] = Address of the SMTP server
-char USER[30] = Username for identification with the SMTP server
-char PWD[30] = Password for identification with the SMTP server
-
-All figures above are identically to the figures used for installation of an
-e-mail program on a PC
-(for example Outlook, Thunderbird etc.).
-
-With this function the listed parameters are transferred to the mobile module,
-but do not activate any further action,
-such as plausibility or access control, radio transmission, etc.
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::EMAILconfigureSMTP(char SMTP[50], char USER[30],
-                                       char PWD[30]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#ESMTP=\""); // Configure SMTP server
-      _HardSerial.print(SMTP);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT#EUSER=\""); // Configure USER NAME
-      _HardSerial.print(USER);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 2) {
-      _HardSerial.print("AT#EPASSW=\""); // Configure PASSWORD
-      _HardSerial.print(PWD);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 3) {
-      return 1; // Configure SMTP server successfully ... let's go ahead!
-    }
-
-  } while (state <= 999);
-
-  return 0; // ERROR ... during configure SMTP server
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Configure and prepare an outgoing e-mail
-
-Parameter:
-char SENDEREMAIL[30] = E-mail address of the sender
-
-With this function the listed parameters are transferred to the mobile module,
-but do not activate any further action,
-such as plausibility or access control, radio transmission, etc.
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response of the mobile module
-*/
-int GSM_GPRS_Class::EMAILconfigureSender(char SENDEREMAIL[30]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#EADDR=\""); // Configure senders EMAIL ADDRESS
-      _HardSerial.print(SENDEREMAIL);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 1) {
-      return 1; // Configure sender information successfully ... let's go ahead!
-    }
-
-  } while (state <= 999);
-
-  return 0; // ERROR ... during configure sender information
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Send an e-mail
-
-Parameter:
-char RECIPIENT[30] = Destination e-mail address
-char TITLE[30] = Subject of the e-mail
-char BODY[200] = Text of the e-mail
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::EMAILsend(char RECIPIENT[30], char TITLE[30],
-                              char BODY[200]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#EMAILD=\""); // Configure the
-      _HardSerial.print(RECIPIENT);      // destination mail address
-      _HardSerial.print("\",\"");        // and the
-      _HardSerial.print(TITLE);          // subject of the mail
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(20000) == 5) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need >
-    }
-
-    if (state == 1) {
-      _HardSerial.print(BODY); // send the text of the email
-      _HardSerial.write(26);   // CTRL-Z
-      if (WaitOfReaction(150000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // wait of OK up to 150s
-    }
-
-    if (state == 2) {
-      return 1; // sending email was successfully!
-    }
-
-  } while (state <= 999);
-
-  return 0; // ERROR ... during configure Titel/Text
-}
-
-//----------------------------------------------------------------------------------------------------------------------------------------------------
-//-- F T P
-//-------------------------------------------------------------------------------------------------------------------------------------------
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Set up to use and process/open a connection to the FTP server
-
-Parameter:
-char HOST[50] = Address of the FTP server
-char PORT = Port to be used (mostly 21)
-char USER[30] = Username for the identification with the FTP server
-char PASS[30] = Password for the identification with the FTP server
-
-All figures above are identically to the figures used for installation of a FTP
-program on a PC
-(for example FileZilla, FTP Voyager etc.).
-
-With this function the listed parameters are transferred to the mobile module,
-but do not activate any further action,
-such as plausibility or access control, radio transmission, etc.
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::FTPopen(char HOST[50], int PORT, char USER[30],
-                            char PASS[30]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#FTPTO=5000\r"); // Configure FTP timeout
-      if (WaitOfReaction(500000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT#FTPOPEN=\""); // Open FTP Connection
-      _HardSerial.print(HOST);
-      _HardSerial.print(":");
-      _HardSerial.print(PORT);
-      _HardSerial.print("\",\"");
-      _HardSerial.print(USER);
-      _HardSerial.print("\",\"");
-      _HardSerial.print(PASS);
-      _HardSerial.print("\",0\r");
-      if (WaitOfReaction(100000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 2) {
-      _HardSerial.print("AT#FTPTYPE=1\r"); // Set the communication type
-      if (WaitOfReaction(500000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 3) {
-      return 1;
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR ... during opening FTP server
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Download a file from the ftp server
-
-Parameter:
-char PATH[50] = Path of the file
-char FILENAME[50] = Name of the file
-
-The contents of the file to be downloaded via FTP is written into the variable
-"GSM_string".
-
-ATTENTION: Please note length "GSM_string" - adjust if necessary
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::FTPdownload(char PATH[50], char FILENAME[50]) {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#FTPGET=\""); // downloading file
-      _HardSerial.print(PATH);
-      _HardSerial.print(FILENAME);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(500000) == 9) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // wait 500 seconds of "CONNECT" as reaction
-    }
-
-    if (state == 1) {
-      WaitOfDownload(500000); // wait 500 seconds of the content of the file
-      state += 1;             // and of "NO CARRIER\r" as reaction
-    }
-
-    if (state == 2) {
-      return 1; // downloading file from the server successfully ... let's go
-                // ahead!
-    }
-
-  } while (state <= 999);
-
-  return 0; // ERROR ... during opening FTP server
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Disconnect from the FTP server and GPRS connection
-
-Parameter:
-none
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::FTPclose() {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT#FTPCLOSE\r"); // close the FTP service
-      if (WaitOfReaction(500000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 1) {
-      _HardSerial.print("AT#SGACT=1,0\r"); // deactivate GPRS/CSD context
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 2) {
-      return 1; // close FTP server successfully ... let's go ahead!
-    }
-
-  } while (state <= 999);
-
-  return 0; // ERROR ... during closing FTP server
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Special receive routine of the serial interface for downloads
-Used for receiving files from FTP
-
-similar to "int GSM_GPRS_Class::WaitOfReaction(long int timeout)"
-*/
-int GSM_GPRS_Class::WaitOfDownload(long int timeout) {
-  int index = 0;
-  int inByte = 0;
-  char WS[3];
-
-  //----- erase GSM_string
-  memset(GSM_string, 0, BUFFER_SIZE);
-
-  //----- clear _HardSerial Line Buffer
-  _HardSerial.flush();
-  while (_HardSerial.available()) {
-    _HardSerial.read();
-  }
-
-  //----- wait of the first character for "timeout" ms
-  _HardSerial.setTimeout(timeout);
-  inByte = _HardSerial.readBytes(WS, 1);
-  GSM_string[index++] = WS[0];
-
-  //----- wait of further characters until a pause of "timeout" ms occures
-  while (inByte > 0) {
-    inByte = _HardSerial.readBytes(WS, 1);
-    GSM_string[index++] = WS[0];
-    if ((strstr(GSM_string, "NO CARRIER")) && (WS[0] == '\r')) {
-      break;
-    }
-  }
-
-  delay(100);
-  return 0;
 }
 
 //----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1583,10 +806,8 @@ void GPS_Class::getGPS() {
   char gps_data_buffer[20];
   char in_data;
   char no_gps_message[22] = "no valid gps signal";
-  int high_Byte;
   int i, j;
   int GPGGA;
-  int Position;
 
   GPGGA = 0;
   i = 0;

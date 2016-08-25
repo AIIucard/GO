@@ -52,10 +52,12 @@ void setup() {
   Serial.println(config.timeoutInMillis);
 
   digitalWrite(CS2, HIGH);
-  GSM.begin();
+  if (GSM.begin() != 1){
+    Serial.println(F("Modem is shit :("));
+  }
 
   delay(1000);
-  if (GSM.initialize(config.pin) == 0) // => everything ok?
+  if (!GSM.initialize(config.pin) == 1) // => everything ok?
   {
     Serial.print(F("ME Init error: >")); // => no! Error during GSM initialising
     Serial.print(GSM.GSM_string);        //    here is the explanation
@@ -65,6 +67,8 @@ void setup() {
 
   while (connectToGPRS() == 0)
     ;
+
+  Serial.println("CONNTECTED TO GPRS YAY");
 
   digitalWrite(CS2, LOW);
 }
