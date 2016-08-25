@@ -1,0 +1,7 @@
+{
+ timeoutInMillis: 3000,
+ APN: "pinternet.interkom.de",
+ USER: "",
+ PASSWORD: "",
+ PIN: "3642"
+}
