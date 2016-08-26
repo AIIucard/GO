@@ -7,6 +7,11 @@
 #include <gsm_gprs_gps_mega.h>
 #include <Time.h>
 
+#include <limits.h>
+
+#define INT_STR_SIZE (sizeof(int)*CHAR_BIT/3 + 3)
+#define MY_ITOA(y,x) my_itoa(y, INT_STR_SIZE, x)
+
 #define DHT11PIN 22
 #define CS1 52 // SD Card
 #define CS2 49 // Shield
@@ -26,6 +31,7 @@ GSM_GPRS_Class GSM(Serial1);
 GPS_Class GPS(Serial1);
 char str_lon[12];
 char str_lan[12];
+char Json_Time_String[20];
 
 void setup() {
   Serial.println(F("Entering setup"));
@@ -68,7 +74,7 @@ void setup() {
 
   while (connectToGPRS() == 0);
 
-  // setTime();
+  setTime();
 
   Serial.println("CONNTECTED TO GPRS YAY");
 
@@ -84,7 +90,7 @@ void loop() {
   root["cdb_classname"] = "cdb_sensordaten";
 
   readTemperatureAndHumidity(root);
-  // readTimestamp(root);
+  readTimestamp(root);
 
   // use shield
   digitalWrite(CS2, HIGH);
@@ -232,9 +238,6 @@ void setTime(){
 }
 
 void readTimestamp(JsonObject& root){
-
-  char Json_Time_String[20];
-
   int seconds = second();
   int minutes = minute();
   int hours = hour();
@@ -249,12 +252,12 @@ void readTimestamp(JsonObject& root){
   char month[3];
   char year[5];
 
-  // sprintf(second, "%d", seconds);
-  // sprintf(minute, "%d", minutes);
-  // sprintf(hour, "%d", hours);
-  // sprintf(day, "%d", days);
-  // sprintf(month, "%d", months);
-  // sprintf(year, "%d", years);
+  MY_ITOA(second, seconds);
+  MY_ITOA(minute, minutes);
+  MY_ITOA(hour, hours);
+  MY_ITOA(day, days);
+  MY_ITOA(month, months);
+  MY_ITOA(year, years);
 
   if(second[1] == '\0')
   {
@@ -308,7 +311,30 @@ void readTimestamp(JsonObject& root){
   Json_Time_String[18] = second[1];
   Json_Time_String[19] = '\0';
 
+  Serial.println(Json_Time_String);
+
   root[F("datum")] = Json_Time_String;
+}
+
+void my_itoa(char *dest, size_t size, int x) {
+  char buf[INT_STR_SIZE];
+  char *p = &buf[INT_STR_SIZE - 1];
+  *p = '\0';
+  int i = x;
+
+  do {
+    *(--p) = abs(i%10) + '0';
+    i /= 10;
+  } while (i);
+
+  if (x < 0) {
+    *(--p) = '-';
+  }
+  size_t len = (size_t) (&buf[INT_STR_SIZE] - p);
+  if (len > size) {
+    Serial.println("Shieeeet Error");
+  }
+  memcpy(dest, p, len);
 }
 
 void readTemperatureAndHumidity(JsonObject& root){
