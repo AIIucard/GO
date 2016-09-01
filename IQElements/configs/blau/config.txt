@@ -3,5 +3,6 @@
  APN: "internet.eplus.de",
  USER: "blau",
  PASSWORD: "blau",
- PIN: "9053"
+ PIN: "9053",
+ DHT: "DHT11"
 }

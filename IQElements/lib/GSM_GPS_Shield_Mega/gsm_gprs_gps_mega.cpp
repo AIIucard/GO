@@ -158,9 +158,8 @@ int GSM_GPRS_Class::initialize(const char simpin[4]) {
 Initialize GPRS connection (previously the module needs to be logged into the
 GSM network already)
 */
-int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
-                                const char PWD[50]) {
-
+int GSM_GPRS_Class::connectGPRS(const char *APN, const char *USER,
+                                const char *PWD, const char *DHT) {
   char response[100];
   // need 0,1 or 0,5
   do {
@@ -218,30 +217,7 @@ int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
   readResponseIntoBuffer(response, sizeof(response), 1000);
   if (!checkIfContains(response, "OK"))
     return -1;
-
-  Status();
-
-  return 1;
-}
-
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Determine current status of the mobile module e.g. of the GSM/GPRS-Networks
-All current states are returned in the string "GSM_string"
-
-This function can easily be extended to further queries, e.g. AT#CGSN (= query
-IMEI),
-AT#CCID (= query CCID), AT#CIMI (= query IMSI) etc.
-
-ATTENTION: Please note length of "Status_string" - adjust if necessary
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::Status() {
-  char response[100];
-
+  // check status
   _HardSerial.print("AT+CREG?\r");
   delay(1000);
   readResponseIntoBuffer(response, sizeof(response), 5000);
@@ -260,6 +236,42 @@ int GSM_GPRS_Class::Status() {
 
   if (!checkIfContains(response, "OK"))
     return -1;
+
+  return 1;
+}
+
+int GSM_GPRS_Class::Status(const char *DHT) {
+
+  Serial.println("DHT Setting b1");
+  Serial.println(DHT);
+  char response[100];
+  _HardSerial.print("AT+CREG?\r");
+  delay(1000);
+  readResponseIntoBuffer(response, sizeof(response), 5000);
+
+  Serial.print(F("AT+CREG: "));
+  Serial.println(response);
+  if (!strstr(response, "+CREG: 0,1")) {
+    return -1;
+  }
+
+  Serial.println("DHT Setting b2");
+  Serial.println(DHT);
+
+  _HardSerial.print("AT+CGREG?\r");
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  Serial.print(F("AT+CGREG: "));
+  Serial.println(response);
+
+  Serial.println("DHT Setting b3");
+  Serial.println(DHT);
+
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  Serial.println("DHT Setting b4");
+  Serial.println(DHT);
 
   return 1;
 }

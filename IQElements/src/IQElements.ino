@@ -2,11 +2,11 @@
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
-#include <dht11.h>
+#include <dht.h>
 #include <gsm_gprs_gps_mega.h>
 #include <Time.h>
 
-#define DHT11PIN 22
+#define DHT_PIN 22
 #define CS1 52 // SD Card
 #define CS2 49 // Shield
 
@@ -15,12 +15,14 @@ struct ConfigData {
   const char *apn;
   const char *user;
   const char *password;
+  const char *dht;
   int timeoutInMillis = 2000;
 };
 
 ConfigData config;
+StaticJsonBuffer<300> jsonConfigBuffer;
 
-dht11 DHT11;
+dht DHT;
 GSM_GPRS_Class GSM(Serial1);
 GPS_Class GPS(Serial1);
 char str_lon[12];
@@ -29,7 +31,7 @@ char Json_Time_String[20];
 
 void setup() {
   Serial.println(F("Entering setup"));
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   pinMode(CS1, OUTPUT);
   pinMode(CS2, OUTPUT);
@@ -116,8 +118,6 @@ void loop() {
 
 //read configuration from SD Card
 bool deserialize(ConfigData &data) {
-  StaticJsonBuffer<300> jsonBuffer;
-
   char fileBuf[300];
   File configFile = SD.open(F("config.txt"), FILE_READ);
   if (configFile) {
@@ -127,17 +127,18 @@ bool deserialize(ConfigData &data) {
   }
 
   // TODO: check somehow if file is read completly
-  JsonObject &root = jsonBuffer.parseObject(fileBuf);
+  JsonObject &root = jsonConfigBuffer.parseObject(fileBuf);
   data.apn = root[F("APN")].asString();
   data.user = root[F("USER")].asString();
   data.password = root[F("PASSWORD")].asString();
   data.pin = root[F("PIN")].asString();
+  data.dht = root[F("DHT")];
 
   return root.success();
 }
 
 int connectToGPRS() {
-  if (GSM.connectGPRS(config.apn, config.user, config.password) != 1)
+  if (GSM.connectGPRS(config.apn, config.user, config.password, config.dht) != 1)
   {
     Serial.print(
         F("GPRS Init error: >")); // => no! Error during GPRS initialising
@@ -153,12 +154,12 @@ int connectToGPRS() {
 // TODO: we need to check if the connection is still OK and try to reconnect if
 // not
 void sendMessageToZimt(JsonObject &root) {
-  int status = GSM.Status();
+  int status = GSM.Status(config.dht);
 
   // Not registered in network, need reconnect
   if (status == 2) {
     connectToGPRS();
-    status = GSM.Status();
+    status = GSM.Status(config.dht);
   }
 
   if (status == 1) {
@@ -223,9 +224,44 @@ void readTimestamp(JsonObject& root){
 
 void readTemperatureAndHumidity(JsonObject& root){
   digitalWrite(CS1, HIGH);
-  if (DHT11.read(DHT11PIN) == DHTLIB_OK) {
-    root[F("luftfeuchtigkeit")] = DHT11.humidity;
-    root[F("temperatur")] = DHT11.temperature;
+  int returnCode = 1; //value thats not a default DHTLIB value
+
+  if (strstr(config.dht, "DHT11")){
+    Serial.println(F("Read DHT 11 sensor"));
+    returnCode = DHT.read11(DHT_PIN);
+  }
+  else if (strstr(config.dht, "DHT22")){
+    Serial.println(F("Read DHT 22 sensor"));
+    returnCode = DHT.read22(DHT_PIN);
+  } else {
+    Serial.println("No DHT Setting in config");
+    Serial.println(config.dht);
+  }
+
+  switch (returnCode)
+  {
+    case DHTLIB_OK:
+    root[F("luftfeuchtigkeit")] = DHT.humidity;
+    root[F("temperatur")] = DHT.temperature;
+		break;
+    case DHTLIB_ERROR_CHECKSUM:
+		Serial.print("Checksum error,\t");
+		break;
+    case DHTLIB_ERROR_TIMEOUT:
+		Serial.print("Time out error,\t");
+		break;
+    case DHTLIB_ERROR_CONNECT:
+        Serial.print("Connect error,\t");
+        break;
+    case DHTLIB_ERROR_ACK_L:
+        Serial.print("Ack Low error,\t");
+        break;
+    case DHTLIB_ERROR_ACK_H:
+        Serial.print("Ack High error,\t");
+        break;
+    default:
+		Serial.print("Unknown error,\t");
+		break;
   }
 }
 

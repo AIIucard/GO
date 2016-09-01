@@ -3,5 +3,6 @@
  APN: "pinternet.interkom.de",
  USER: "",
  PASSWORD: "",
- PIN: "3642"
+ PIN: "3642",
+ DHT: "DHT11"
 }
