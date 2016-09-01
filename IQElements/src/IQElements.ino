@@ -137,8 +137,7 @@ bool deserialize(ConfigData &data) {
 }
 
 int connectToGPRS() {
-  if (GSM.connectGPRS(config.apn, config.user, config.password) ==
-      0) // => everything ok?
+  if (GSM.connectGPRS(config.apn, config.user, config.password) != 1)
   {
     Serial.print(
         F("GPRS Init error: >")); // => no! Error during GPRS initialising

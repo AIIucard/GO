@@ -128,20 +128,20 @@ int GSM_GPRS_Class::initialize(const char simpin[4]) {
   _HardSerial.print("AT+CPIN?\r"); // SIM pin need?
   readResponseIntoBuffer(response, sizeof(response), 3000);
 
-  if (checkIfContains(response, "SIM PIN")){
+  if (checkIfContains(response, "SIM PIN")) {
     Serial.println("Sim pin needed");
-    //sim pin is Needed
+    // sim pin is Needed
     _HardSerial.print("AT+CPIN="); // enter pin   (SIM)
     _HardSerial.print(simpin);
     _HardSerial.print("\r");
 
     readResponseIntoBuffer(response, sizeof(response), 5000);
-    if (!checkIfContains(response, "OK")){
+    if (!checkIfContains(response, "OK")) {
       return -1;
     }
     Serial.println("Sim pin entered");
     Serial.println(response);
-  } else if (!checkIfContains(response, "READY")){
+  } else if (!checkIfContains(response, "READY")) {
     Serial.println("Unknown answer");
     return -1;
   }
@@ -150,6 +150,76 @@ int GSM_GPRS_Class::initialize(const char simpin[4]) {
   _HardSerial.print("AT&K0\r"); // disable Flowcontrol
   if (!checkIfContains(response, "OK"))
     return -1;
+
+  return 1;
+}
+
+/*
+Initialize GPRS connection (previously the module needs to be logged into the
+GSM network already)
+*/
+int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
+                                const char PWD[50]) {
+
+  char response[100];
+  // need 0,1 or 0,5
+  do {
+    Serial.println("check creg status");
+    _HardSerial.print("AT+CREG?\r"); // Network Registration Report
+    delay(1000);
+    readResponseIntoBuffer(response, sizeof(response), 1000);
+  } while (!strstr(response, "0,1") && !strstr(response, "0,5"));
+  Serial.print("CREG Status is: ");
+  Serial.println(response);
+
+  // attach to GPRS service?
+  do {
+    Serial.println("try attach to GPRS service");
+    _HardSerial.print("AT+CGATT?\r");
+    delay(1000);
+    readResponseIntoBuffer(response, sizeof(response), 1000);
+  } while (!strstr(response, "+CGATT: 1")); // need +CGATT: 1
+
+  // Define PDP Context
+  Serial.println("try to define context");
+  _HardSerial.print("AT+CGDCONT=1,\"IP\",\"");
+  _HardSerial.print(APN);
+  _HardSerial.print("\"");
+  _HardSerial.print("\r");
+  delay(1000);
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  // Configure Authentication User ID
+  Serial.println("configure user");
+  _HardSerial.print("AT#USERID=\"");
+  _HardSerial.print(USER);
+  _HardSerial.print("\"\r");
+  delay(1000);
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  // Configure Authentication Password
+  Serial.println("configure password");
+  _HardSerial.print("AT#PASSW=\"");
+  _HardSerial.print(PWD);
+  _HardSerial.print("\"\r");
+  delay(1000);
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  Serial.println("try to activate context");
+  _HardSerial.print("AT#SGACT=1,1\r"); // Context Activation
+  delay(1000);
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+  if (!checkIfContains(response, "OK"))
+    return -1;
+
+  Status();
 
   return 1;
 }
@@ -173,6 +243,7 @@ int GSM_GPRS_Class::Status() {
   char response[100];
 
   _HardSerial.print("AT+CREG?\r");
+  delay(1000);
   readResponseIntoBuffer(response, sizeof(response), 5000);
 
   Serial.print(F("AT+CREG: "));
@@ -224,137 +295,11 @@ int GSM_GPRS_Class::setClock() {
 Check Telit_Modules_Software_User_Guide_r16: 3.8.5.2. Read current date and time
 */
 int GSM_GPRS_Class::getTime() {
-  state = 0;
-  do {
-    if (state == 0) {
-      _HardSerial.print("AT+CCLK?\r");
-      if(WaitOfReaction(1000) == 1)
-      {
-        return 1;
-      } else {
-        state = 1000;
-      }
-    }
-  } while (state <= 999);
-
-  return 0;
-}
-
-//----------------------------------------------------------------------------------------------------------------------------------------------------
-//-- G P R S + T C P / I P
-//---------------------------------------------------------------------------------------------------------------------------
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Initialize GPRS connection (previously the module needs to be logged into the
-GSM network already)
-With the successful set-up of the GPRS connection the base for processing
-internet (TCP(IP, UDP etc.), e-mail (SMTP)
-and PING commands is given.
-
-Parameter:
-char APN[50] = APN of the SIM card provider
-char USER[30] = Username for this
-char PASSW[50] = Password for this
-
-ATTENTION: This SIM card data is provider-dependent and can be obtained from
-them.
-For example "internet.t-mobile.de","t-mobile","whatever" for T-Mobile, Germany
-and "gprs.vodafone.de","whatever","whatever" for Vodafone, Germany
-ATTENTION: The SIM card must be suitable or enabled for GPRS data transmission.
-Not all SIM cards
-(as for example very inexpensive SIM cards) are automatically enabled!!!
-
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::connectGPRS(const char APN[50], const char USER[30],
-                                const char PWD[50]) {
-  int time = 0;
-
-  state = 1;
-  do {
-    if (state == 0) {
-      Serial.println("check creg status");
-      _HardSerial.print("AT+CREG?\r"); // Network Registration Report
-      if (WaitOfReaction(1000) == 4) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need 0,1 or 0,5
-    }
-
-    if (state == 1) // Judge network?
-    {
-      Serial.println("try attach to GPRS service");
-      _HardSerial.print("AT+CGATT?\r"); // attach to GPRS service?
-      if (WaitOfReaction(1000) == 7)    // need +CGATT: 1
-      {
-        state += 1; // get: attach
-      } else {
-        delay(2000);
-        if (time++ < 60) {
-          state = state; // stay in this state until timeout
-        } else {
-          state = 1000; // after 120 sek. (60 x 2000 ms) not attach
-        }
-      }
-    }
-
-    if (state == 2) {
-      Serial.println("try to define context");
-      _HardSerial.print("AT+CGDCONT=1,\"IP\",\""); // Define PDP Context
-      _HardSerial.print(APN);
-      _HardSerial.print("\"");
-      _HardSerial.print("\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 3) {
-      Serial.println("configure user");
-      _HardSerial.print("AT#USERID=\""); // Configure Authentication User ID
-      _HardSerial.print(USER);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 4) {
-      Serial.println("configure password");
-      _HardSerial.print("AT#PASSW=\""); // Configure Authentication Password
-      _HardSerial.print(PWD);
-      _HardSerial.print("\"\r");
-      if (WaitOfReaction(1000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need OK
-    }
-
-    if (state == 5) {
-      Serial.println("try to activate context");
-      _HardSerial.print("AT#SGACT=1,1\r"); // Context Activation
-      if (WaitOfReaction(150000) == 1) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need IP and OK
-    }
-
-    if (state == 6) {
-      Serial.println("Context activation ok");
-      return 1; // GPRS connect successfully ... let's go ahead!
-    }
-  } while (state <= 999);
-
-  return 0; // ERROR ... no GPRS connect
+  _HardSerial.print("AT+CCLK?\r");
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 1000);
+  if (!checkIfContains(GSM_string, "OK"))
+    return -1;
+  return 1;
 }
 
 /*
