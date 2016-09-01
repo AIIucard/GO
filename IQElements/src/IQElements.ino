@@ -46,7 +46,14 @@ void setup() {
     delay(1000);
   }
   Serial.println(F("Initialization for SD completed"));
-  deserialize(config);
+  if(!deserialize(config)){
+    while(1){delay(10000);
+      digitalWrite(13, LOW);
+      Serial.println(F("Error Jo"));
+    }
+  }
+  delay(10000);
+  Serial.println(F("Initialization config completed"));
   digitalWrite(CS1, LOW);
 
   Serial.print(F("Use loop interval of: "));
@@ -71,7 +78,6 @@ void setup() {
   setClock();
 
   Serial.println("CONNTECTED TO GPRS YAY");
-
   digitalWrite(CS2, LOW);
 }
 
@@ -137,7 +143,8 @@ bool deserialize(ConfigData &data) {
 }
 
 int connectToGPRS() {
-  if (GSM.connectGPRS(config.apn, config.user, config.password) != 1)
+  if (GSM.connectGPRS(config.apn, config.user, config.password) ==
+      0) // => everything ok?
   {
     Serial.print(
         F("GPRS Init error: >")); // => no! Error during GPRS initialising
