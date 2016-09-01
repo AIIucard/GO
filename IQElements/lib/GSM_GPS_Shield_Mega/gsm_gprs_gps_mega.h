@@ -70,12 +70,12 @@ public:
   // Functions
   int  begin();
   int  initialize(const char simpin[4]);
-  int  Status();
+  int  Status(const char* DHT);
 
   int  setClock();
   int  getTime();
 
-  int  connectGPRS(const char APN[50], const char USER[30], const char PWD[50]);
+  int  connectGPRS(const char *APN, const char *USER, const char *PWD, const char* DHT);
   int  sendHTTPGET(char server[50], char url[200], int port);
   int  sendHTTP_POST_JSON(char server[50], char parameter_string[200], int port, char body[500]);
   void disconnectGPRS();
