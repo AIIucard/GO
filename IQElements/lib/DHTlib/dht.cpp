@@ -68,8 +68,77 @@ int8_t dht::read11(uint8_t pin)
     return result;
 }
 
+int8_t dht::read22(uint8_t pin)
+{
+	// BUFFER TO RECEIVE
+	uint8_t cnt = 7;
+	uint8_t idx = 0;
+
+	// EMPTY BUFFER
+	for (int i=0; i< 5; i++) bits[i] = 0;
+
+	// REQUEST SAMPLE
+	pinMode(pin, OUTPUT);
+	digitalWrite(pin, LOW);
+	delay(18);
+	digitalWrite(pin, HIGH);
+	delayMicroseconds(40);
+	pinMode(pin, INPUT);
+
+	// ACKNOWLEDGE or TIMEOUT
+	unsigned int loopCnt = 10000;
+	while(digitalRead(pin) == LOW)
+		if (loopCnt-- == 0) return -2;
+
+	loopCnt = 10000;
+	while(digitalRead(pin) == HIGH)
+		if (loopCnt-- == 0) return -2;
+
+	// READ OUTPUT - 40 BITS => 5 BYTES or TIMEOUT
+	for (int i=0; i<40; i++)
+	{
+		loopCnt = 10000;
+		while(digitalRead(pin) == LOW)
+			if (loopCnt-- == 0) return -2;
+
+		unsigned long t = micros();
+
+		loopCnt = 10000;
+		while(digitalRead(pin) == HIGH)
+			if (loopCnt-- == 0) return -2;
+
+		if ((micros() - t) > 40) bits[idx] |= (1 << cnt);
+		if (cnt == 0)   // next byte?
+		{
+			cnt = 7;    // restart at MSB
+			idx++;      // next byte!
+		}
+		else cnt--;
+	}
+
+	// WRITE TO RIGHT VARS
+	humidity    = word(bits[0], bits[1]) *.1;//calculates and stores the humidity
+
+	 uint8_t sign = 1;
+	        if (bits[2] & 0x80) // negative temperature
+	        {
+	                bits[2] = bits[2] & 0x7F;//negative temp adjustments
+	                sign = -1;
+	        }
+        temperature = sign * word(bits[2], bits[3]) * 0.1;//temp calculation and storage
+
+
+	uint8_t sum = bits[0] + bits[1] + bits[2] + bits[3];//sum values
+
+	if (bits[4] != sum) return -1;//failed checksum
+	return 0;//great success!
+}
+
 int8_t dht::read(uint8_t pin)
 {
+    // EMPTY BUFFER
+    for (int i=0; i<5; i++) bits[i] = 0;
+
     // READ VALUES
     int8_t result = _readSensor(pin, DHTLIB_DHT_WAKEUP, DHTLIB_DHT_LEADING_ZEROS);
 
@@ -80,10 +149,10 @@ int8_t dht::read(uint8_t pin)
     // CONVERT AND STORE
     humidity = (bits[0]*256 + bits[1]) * 0.1;
     temperature = ((bits[2] & 0x7F)*256 + bits[3]) * 0.1;
-    if (bits[2] & 0x80)  // negative temperature
+    /*if (bits[2] & 0x80)  // negative temperature
     {
         temperature = -temperature;
-    }
+    }*/
 
     // TEST CHECKSUM
     uint8_t sum = bits[0] + bits[1] + bits[2] + bits[3];

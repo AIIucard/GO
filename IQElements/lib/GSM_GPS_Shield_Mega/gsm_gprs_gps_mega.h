@@ -70,7 +70,7 @@ public:
   // Functions
   int  begin();
   int  initialize(const char simpin[4]);
-  int  Status(const char* DHT);
+  int  Status();
 
   int  setClock();
   int  getTime();

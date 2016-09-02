@@ -160,12 +160,12 @@ int connectToGPRS() {
 // TODO: we need to check if the connection is still OK and try to reconnect if
 // not
 void sendMessageToZimt(JsonObject &root) {
-  int status = GSM.Status(config.dht);
+  int status = GSM.Status();
 
   // Not registered in network, need reconnect
   if (status == 2) {
     connectToGPRS();
-    status = GSM.Status(config.dht);
+    status = GSM.Status();
   }
 
   if (status == 1) {

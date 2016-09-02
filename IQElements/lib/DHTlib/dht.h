@@ -57,10 +57,10 @@ public:
     // DHTLIB_ERROR_ACK_L
     // DHTLIB_ERROR_ACK_H
     int8_t read11(uint8_t pin);
+    int8_t read22(uint8_t pin);
     int8_t read(uint8_t pin);
 
     inline int8_t read21(uint8_t pin) { return read(pin); };
-    inline int8_t read22(uint8_t pin) { return read(pin); };
     inline int8_t read33(uint8_t pin) { return read(pin); };
     inline int8_t read44(uint8_t pin) { return read(pin); };
 

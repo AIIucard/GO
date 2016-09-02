@@ -240,10 +240,7 @@ int GSM_GPRS_Class::connectGPRS(const char *APN, const char *USER,
   return 1;
 }
 
-int GSM_GPRS_Class::Status(const char *DHT) {
-
-  Serial.println("DHT Setting b1");
-  Serial.println(DHT);
+int GSM_GPRS_Class::Status() {
   char response[100];
   _HardSerial.print("AT+CREG?\r");
   delay(1000);
@@ -255,23 +252,14 @@ int GSM_GPRS_Class::Status(const char *DHT) {
     return -1;
   }
 
-  Serial.println("DHT Setting b2");
-  Serial.println(DHT);
-
   _HardSerial.print("AT+CGREG?\r");
   readResponseIntoBuffer(response, sizeof(response), 2000);
 
   Serial.print(F("AT+CGREG: "));
   Serial.println(response);
 
-  Serial.println("DHT Setting b3");
-  Serial.println(DHT);
-
   if (!checkIfContains(response, "OK"))
     return -1;
-
-  Serial.println("DHT Setting b4");
-  Serial.println(DHT);
 
   return 1;
 }
