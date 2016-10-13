@@ -2,17 +2,18 @@
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
-#include <dht.h>
+#include <dht11.h>
 #include <gsm_gprs_gps_mega.h>
 #include <Time.h>
 
-#define DHT_PIN 22
+#define DHTPIN 22
 #define CS1 52 // SD Card
 #define CS2 49 // Shield
 
 struct ConfigData {
   const char *pin;
   const char *apn;
+  const char *boardid;
   const char *user;
   const char *password;
   const char *dht;
@@ -22,12 +23,13 @@ struct ConfigData {
 ConfigData config;
 StaticJsonBuffer<300> jsonConfigBuffer;
 
-dht DHT;
+dht11 DHT;
 GSM_GPRS_Class GSM(Serial1);
 GPS_Class GPS(Serial1);
-char str_lon[12];
-char str_lan[12];
+float str_lon;
+float str_lan;
 char Json_Time_String[20];
+char session_Key[33];
 
 void setup() {
   Serial.println(F("Entering setup"));
@@ -98,9 +100,6 @@ void loop() {
   digitalWrite(CS2, HIGH);
   readGPS(root);
 
-  // TODO: activate when POST to Zimt is fixed
-  // retrieveOpenWeatherMapData();
-
   // TODO: compare data with open weather map and create error if necessary
 
   // just debug info
@@ -109,7 +108,10 @@ void loop() {
   Serial.println(F("\r\n---------------------------------"));
 
   // last but not least send data to zimt server
+
+  retrieveOpenWeatherMapData(root);
   sendMessageToZimt(root);
+  sendCloseToZimt(root);
   digitalWrite(CS2, LOW);
 
   // open file to store at sd card TODO: only when its not send
@@ -135,16 +137,17 @@ bool deserialize(ConfigData &data) {
   // TODO: check somehow if file is read completly
   JsonObject &root = jsonConfigBuffer.parseObject(fileBuf);
   data.apn = root[F("APN")].asString();
+  data.boardid = root[F("BOARDID")].asString();
   data.user = root[F("USER")].asString();
   data.password = root[F("PASSWORD")].asString();
   data.pin = root[F("PIN")].asString();
-  data.dht = root[F("DHT")];
+  data.dht = root[F("DHT")].asString();
 
   return root.success();
 }
 
 int connectToGPRS() {
-  if (GSM.connectGPRS(config.apn, config.user, config.password, config.dht) != 1)
+  if (GSM.connectGPRS(config.apn, config.user, config.password) != 1)
   {
     Serial.print(
         F("GPRS Init error: >")); // => no! Error during GPRS initialising
@@ -162,6 +165,8 @@ int connectToGPRS() {
 void sendMessageToZimt(JsonObject &root) {
   int status = GSM.Status();
 
+  root[F("fs_board")] = config.boardid;
+
   // Not registered in network, need reconnect
   if (status == 2) {
     connectToGPRS();
@@ -173,11 +178,37 @@ void sendMessageToZimt(JsonObject &root) {
     char body[400];
     memset(body, 0, 400);
     root.printTo(body, sizeof(body));
+
+    Serial.println(body);
+
     // TODO api from config
-    int response = GSM.sendHTTP_POST_JSON(
-        "piwik.contact.de", "/api/v1/collection/cdb_sensordaten", 8080, body);
+    int response = GSM.sendZimtPost(body);
     if (response == 1) {
       Serial.println(GSM.GSM_string);
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
+    }
+  } else {
+    Serial.println(F("ERROR: Couldn't fix network connection"));
+  }
+}
+
+void sendCloseToZimt(JsonObject &root) {
+  int status = GSM.Status();
+
+  if (status == 2) {
+    connectToGPRS();
+    status = GSM.Status();
+  }
+
+  if (status == 1) {
+    int response = GSM.sendZimtGet();
+    if (response == 1) {
+      Serial.println(GSM.GSM_string);
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
     }
   } else {
     Serial.println(F("ERROR: Couldn't fix network connection"));
@@ -229,6 +260,11 @@ void readTimestamp(JsonObject& root){
 }
 
 void readTemperatureAndHumidity(JsonObject& root){
+  if (DHT.read(DHTPIN) == DHTLIB_OK) {
+    root[F("luftfeuchtigkeit")] = DHT.humidity;
+    root[F("temperatur")] = DHT.temperature;
+  }
+  /*
   digitalWrite(CS1, HIGH);
   int returnCode = 1; //value thats not a default DHTLIB value
 
@@ -268,7 +304,7 @@ void readTemperatureAndHumidity(JsonObject& root){
     default:
 		Serial.print("Unknown error,\t");
 		break;
-  }
+  }*/
 }
 
 void readGPS(JsonObject &root) {
@@ -296,13 +332,12 @@ void readGPS(JsonObject &root) {
   // run into problems
   // so instead of manipulating str_lon and str_lan pointers, create another
   // pointer with offset?
-  memset(str_lon, 0, 12);
-  memset(str_lan, 0, 12);
-  dtostrf(getDecimalCoordinate(GPS.longitude), 7, 4, str_lon);
-  dtostrf(getDecimalCoordinate(GPS.latitude), 7, 4, str_lan);
-
-  root["laengengrad"] = str_lon;
-  root["breitengrad"] = str_lan;
+  str_lon = getDecimalCoordinate(GPS.longitude);
+  str_lan = getDecimalCoordinate(GPS.latitude);
+  if(str_lon != 0.00 && str_lan != 0.00){
+    root["longitude"] = str_lon;
+    root["latitude"] = str_lan;
+  }
 }
 
 // awkward way to convert coordinate to decimals.. wunderful char pointers..
@@ -330,34 +365,65 @@ float getDecimalCoordinate(char *coord) {
   return degrees;
 }
 
-void retrieveOpenWeatherMapData() {
+void retrieveOpenWeatherMapData(JsonObject &root) {
   // get current data from open weathermap
-  char openWeatherUrl[250];
+  StaticJsonBuffer<800> jsonWBuffer;
+  int status = GSM.Status();
+  root[F("fs_board")] = config.boardid;
 
-  // TODO: API Key from Config
-  sprintf(openWeatherUrl, "/data/2.5/"
-                          "weather?lon=%s&lat=%s&units=metric&APPID="
-                          "226487074b292a9461c9e8bf6d5e78dd",
-          str_lon, str_lan);
-  GSM.sendHTTPGET("api.openweathermap.org", openWeatherUrl, 80);
-  char *messageBody = strstr(GSM.GSM_string, "\r\n\r\n");
+  // Not registered in network, need reconnect
+  if (status == 2) {
+    connectToGPRS();
+    status = GSM.Status();
+  }
 
-  Serial.println(GSM.GSM_string);
-  Serial.println();
+  if (status == 1) {
+    // send message to server
+    char openWeatherUrl[250];
+    memset(openWeatherUrl, 0, 250);
 
-  if (messageBody) {
-    Serial.println("Message body found");
-    char jsonMessage[500];
-    char *startJson = strpbrk(messageBody, "{");
-    char *endJson = strrchr(messageBody, '}');
-    if (strstr(endJson - 1, "}}")) {
-      strlcpy(jsonMessage, startJson, (endJson - startJson) + 1);
-    } else {
-      strlcpy(jsonMessage, startJson, (endJson - startJson) + 2);
+    // TODO: API Key from Config
+    if(str_lon == NULL && str_lan == NULL){
+      Serial.println("WARNING: Using fake coordinates for Openweathermap");
+      sprintf(openWeatherUrl, "/data/2.5/weather?lon=8.5839282&lat=53.5369201&units=metric&APPID=83513c44070d8498ed3f3b3ddd4cd628");
+    }
+    else{
+      sprintf(openWeatherUrl, "/data/2.5/weather?lon=%s&lat=%s&units=metric&APPID=83513c44070d8498ed3f3b3ddd4cd628", str_lon, str_lan);
     }
 
-    Serial.println(jsonMessage);
-    Serial.println();
+    Serial.println(openWeatherUrl);
+
+    int response = GSM.sendOpenWeatherGet(openWeatherUrl);
+    if (response == 1) {
+      char *messageBody = strstr(GSM.GSM_string, "\r\n\r\n");
+
+      if (messageBody) {
+        Serial.println("Message body found");
+        char jsonMessage[500];
+        char *startJson = strpbrk(messageBody, "{");
+        char *endJson = strrchr(messageBody, '}');
+        if (strstr(endJson - 1, "}}")) {
+          strlcpy(jsonMessage, startJson, (endJson - startJson) + 1);
+        } else {
+          strlcpy(jsonMessage, startJson, (endJson - startJson) + 2);
+        }
+        Serial.println(jsonMessage);
+        JsonObject &weather = jsonWBuffer.parseObject(jsonMessage);
+        root[F("owm_temperatur")] = weather[F("main")][F("temp")];
+        root[F("owm_longitude")] = weather[F("coord")][F("lon")];
+        root[F("owm_latitude")] = weather[F("coord")][F("lat")];
+        root[F("owm_luftfeuchtigkeit")] = weather[F("main")][F("humidity")];
+        Serial.println();
+      }
+      else{
+        Serial.println("Error: Message not Found");
+      }
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
+    }
+  } else {
+    Serial.println(F("ERROR: Couldn't fix network connection"));
   }
 }
 

@@ -1,5 +1,6 @@
 {
  timeoutInMillis: 3000,
+ BOARDID: "b1d248c0-75ce-11e6-af35-dbbf22215e4c",
  APN: "pinternet.interkom.de",
  USER: "",
  PASSWORD: "",

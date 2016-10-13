@@ -1,4 +1,4 @@
-// 
+//
 //    FILE: dht11.h
 // VERSION: 0.4.1
 // PURPOSE: DHT11 Temperature & Humidity Sensor library for Arduino
@@ -11,7 +11,7 @@
 // HISTORY:
 // George Hadjikyriacou - Original version
 // see dht.cpp file
-// 
+//
 
 #ifndef dht11_h
 #define dht11_h
@@ -32,8 +32,8 @@ class dht11
 {
 public:
     int read(int pin);
-	int humidity;
-	int temperature;
+	  int humidity;
+	  int temperature;
 };
 #endif
 //

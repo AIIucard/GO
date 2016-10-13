@@ -1,8 +1,14 @@
 {
  timeoutInMillis: 3000,
- APN: "internet.eplus.de",
- USER: "blau",
- PASSWORD: "blau",
+
+  BOARDID: "af913261-75ce-11e6-b281-dbbf22215e4c",
+  APN: "internet.eplus.de",
+
+  USER: "blau",
+
+  PASSWORD: "blau",
+ 
  PIN: "9053",
+ 
  DHT: "DHT11"
 }

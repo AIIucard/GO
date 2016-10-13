@@ -159,7 +159,7 @@ Initialize GPRS connection (previously the module needs to be logged into the
 GSM network already)
 */
 int GSM_GPRS_Class::connectGPRS(const char *APN, const char *USER,
-                                const char *PWD, const char *DHT) {
+                                const char *PWD) {
   char response[100];
   // need 0,1 or 0,5
   do {
@@ -306,8 +306,7 @@ int GSM_GPRS_Class::getTime() {
 Reads the modems response into the given buffer.
 Waits up to "timout" milliseconds to retrieve the first byte from the modem
 */
-void GSM_GPRS_Class::readResponseIntoBuffer(char *buffer, size_t bufferSize,
-                                            long timeout) {
+void GSM_GPRS_Class::readResponseIntoBuffer(char *buffer, size_t bufferSize,  long timeout) {
   char byteBuf[1];
   int bytesRead = 0;
 
@@ -380,13 +379,12 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char *server, char *url, int port,
   _HardSerial.print("Host: ");
   _HardSerial.print(server);
   _HardSerial.print("\r\n");
-
   _HardSerial.print("User-Agent: ArduinoMega\r\n"); // Header Field "User-Agent"
                                                     // (MUST be "antrax" when
                                                     // use with portal
                                                     // "WebServices")
   _HardSerial.print("Authorization: Basic Y2FkZG9rOg==\r\n");
-  _HardSerial.print("Connection: close\r\n"); // Header Field "Connection"
+  _HardSerial.print("Connection: keep-alive\r\n"); // Header Field "Connection"
   _HardSerial.print("Content-type: application/json\r\n");
   _HardSerial.print("Content-length: "); // Header Field "Connection"
   _HardSerial.print(strlen(body));
@@ -397,7 +395,8 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char *server, char *url, int port,
   _HardSerial.flush();
 
   // read HTTP answer
-  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 2000);
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 20000);
+  GSM_string[BUFFER_SIZE - 1] = '\0';
 
   // clear incoming data buffer
   while (_HardSerial.available() > 0) {
@@ -406,6 +405,152 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char *server, char *url, int port,
 
   // Exit data mode with escape sequence +++
   // try as hard as possible with while loop >.>
+  delay(2000);
+  _HardSerial.print("+++"); // no linefeed here!
+  _HardSerial.flush();
+  delay(2000); // need to wait min 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+
+  if(!strstr(response, "OK")) {
+    Serial.println(F("ERROR: Egal...")); // Failed to exit data mode"));
+    /*delay(4000);
+    readResponseIntoBuffer(response, sizeof(response), 2000);*/
+  }
+  else{
+    Serial.println(F("Exited socket data mode, try to close socket now"));
+  }
+
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000); // need to wait 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  if (!strstr(response, "OK")) {
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.println(F("Socket closed, everything went fine"));
+
+  return 1;
+}
+
+int GSM_GPRS_Class::sendOpenWeatherGet(char *url) {
+  memset(GSM_string, 0, BUFFER_SIZE);
+  _HardSerial.flush();
+
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  _HardSerial.print("AT#SD=1,0,80,\"api.openweathermap.org\",0\r");
+  _HardSerial.flush();
+
+  char response[100];
+  readResponseIntoBuffer(response, sizeof(response), 4000);
+
+  if (!strstr(response, "CONNECT")) {
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
+
+  _HardSerial.print("GET ");
+  _HardSerial.print(url);
+  _HardSerial.print(" HTTP/1.1\r\n");
+  _HardSerial.print("Host: api.openweathermap.org\r\n");
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");
+  _HardSerial.print("Connection: close\r\n\r\n");
+  _HardSerial.write(26);
+
+  WaitOfReaction(20000);
+  //readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 4000);
+
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  _HardSerial.print("+++");
+  _HardSerial.flush();
+
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  if(!strstr(response, "OK")) {
+    Serial.println(F("ERROR: Egal.."));
+  }
+  else{
+    Serial.println(F("Exited socket data mode, try to close socket now"));
+  }
+
+  Serial.println(F("Exited socket data mode, try to close socket now"));
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000);
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  if (!strstr(response, "OK")) {
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket closed, everything went fine"));
+
+  return 1;
+}
+
+int GSM_GPRS_Class::sendHTTPGET(char *server, char *url, int port) {
+  memset(GSM_string, 0, BUFFER_SIZE);
+  _HardSerial.flush();
+
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  _HardSerial.print("AT#SD=1,0,");
+  _HardSerial.print(port);
+  _HardSerial.print(",\"");
+  _HardSerial.print(server);
+  _HardSerial.print("\",0\r");
+
+  _HardSerial.flush();
+
+  delay(2000); // need to wait 1 seconds
+  // get response from modem
+  char response[100];
+  readResponseIntoBuffer(response, sizeof(response), 4000);
+
+  // response should be "CONNECT"
+  if (!strstr(response, "CONNECT")) {
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
+
+  // send the HTTP message
+  _HardSerial.print("GET ");
+  _HardSerial.print(url);
+  _HardSerial.print(" HTTP/1.1\r\n");
+
+  _HardSerial.print("Host: ");
+  _HardSerial.print(server);
+  _HardSerial.print("\r\n");
+
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");
+  _HardSerial.print("Connection: close\r\n"); // Header Field "Connection"
+
+  _HardSerial.flush();
+
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 8000);
+
+  // clear incoming data buffer
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
   _HardSerial.print("+++"); // no linefeed here!
   _HardSerial.flush();
   delay(2000); // need to wait 2 seconds
@@ -432,108 +577,152 @@ int GSM_GPRS_Class::sendHTTP_POST_JSON(char *server, char *url, int port,
   return 1;
 }
 
-/*----------------------------------------------------------------------------------------------------------------------------------------------------
-Send HTTP GET
-This corresponds to the "call" of a URL (such as the with the internet browser)
-with appended parameters
+int GSM_GPRS_Class::sendZimtGet(){
+  memset(GSM_string, 0, BUFFER_SIZE);
+  _HardSerial.flush();
 
-Parameter:
-char server[50] = Address of the server (= URL)
-char parameter_string[200] = parameters to be appended
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
 
-ATTENTION: Before using this function a GPRS connection must be set up.
+  _HardSerial.print("AT#SD=1,0,8080,\"piwik.contact.de\",0\r");
+  _HardSerial.flush();
 
-You may use the "antrax Test Loop Server" for testing. All HTTP GETs to the
-server are logged in a list,
-that can be viewed on the internet
-(http://www.antrax.de/WebServices/responderlist.html)
+  delay(2000);
+  char response[100];
+  readResponseIntoBuffer(response, sizeof(response), 4000);
 
-Example for a correct URL for the transmission of the information "HelloWorld":
+  if (!strstr(response, "CONNECT")) {
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
 
-http://www.antrax.de/WebServices/responder.php?data=HelloWorld
-whereby
-- "www.antrax.de" is the server name
-- "GET /WebServices/responder.php?data=HelloWorld HTTP/1.1" the parameter
+  _HardSerial.print("GET /server/__quit__ HTTP/1.1\r\n");
+  _HardSerial.print("Host: piwik.contact.de:8080\r\n");
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");
+  _HardSerial.print("Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n");
+  _HardSerial.print("Accept-Language: de,en-US;q=0.7,en;q=0.3\r\n");
+  _HardSerial.print("Accept-Encoding: gzip, deflate\r\n");
+  _HardSerial.print("Cookie: contact.usr=caddok; contact.usr=caddok; contact.sessionkey=25e1d2c4914446e59d953224c17724ae\r\n");
+  _HardSerial.print("Authorization: Basic Y2FkZG9rOg==\r\n");
+  _HardSerial.print("DNT: 1\r\n");
+  _HardSerial.print("Connection: keep-alive\r\n");
+  _HardSerial.print("Upgrade-Insecure-Requests: 1\r\n");
+  _HardSerial.flush();
 
-On the server the URL of the PHP script "responder.php" is accepted and analyzed
-in the subdirectory "WebServices".
-The part after the "?" corresponds to the transmitted parameters. ATTENTION: The
-parameters must not
-contain spaces. The source code of the PHP script "responder.php" is located in
-the documentation.
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 2000);
 
-Return value = 0 ---> Error occured
-Return value = 1 ---> OK
-The public variable "GSM_string" contains the last response from the mobile
-module
-*/
-int GSM_GPRS_Class::sendHTTPGET(char server[50], char parameter_string[200],
-                                int port) {
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
 
-  state = 0;
-  do {
-    if (state ==
-        0) { // See "Telit_AT_Commands_Reference_Guide_r15.pdf", page 391
-      Serial.print("Sending request to: ");
-      Serial.println(server);
-      Serial.print("URL: ");
-      Serial.println(parameter_string);
+  _HardSerial.print("+++");
+  _HardSerial.flush();
+  delay(2000);
+  readResponseIntoBuffer(response, sizeof(response), 1000);
 
-      _HardSerial.print("AT#SD=1,0,"); // Execution command opens a remote TCP
-                                       // connection via socket
-      _HardSerial.print(port);
-      _HardSerial.print(",\"");
-      _HardSerial.print(server);
-      _HardSerial.print("\",0\r");
-      if (WaitOfReaction(140000UL) == 9) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // need CONNECT
-    }
+  if (!strstr(response, "OK")) {
+    Serial.println(F("ERROR: Failed to exit data mode"));
+    return -1;
+  }
 
-    if (state == 1) {
-      // for HTTP GET must include: "GET
-      // /subdirectory/name.php?test=parameter_to_transmit HTTP/1.1"
-      // for example to use with "www.antrax.de/WebServices/responderlist.html":
-      // "GET /WebServices/responder.php?test=HelloWorld HTTP/1.1"
-      _HardSerial.print("GET ");
-      _HardSerial.print(parameter_string); // Message-Text
-      _HardSerial.print(" HTTP/1.1");
+  Serial.println(F("Exited socket data mode, try to close socket now"));
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000);
+  readResponseIntoBuffer(response, sizeof(response), 2000);
 
-      // Header Field Definitions in
-      // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html
-      _HardSerial.print("\r\nHost: "); // Header Field "Host"
-      _HardSerial.print(server);
-      _HardSerial.print("\r\nUser-Agent: antrax"); // Header Field "User-Agent"
-                                                   // (MUST be "antrax" when use
-                                                   // with portal "WebServices")
-      _HardSerial.print(
-          "\r\nConnection: close\r\n\r\n"); // Header Field "Connection"
-      _HardSerial.write(26);                // CTRL-Z
+  if (!strstr(response, "OK")) {
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.println(F("Socket closed, everything went fine"));
 
-      if (WaitOfReaction(20000) == 8) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // Congratulations ... the parameter_string was send to the server
-    }
+  return 1;
+}
 
-    if (state == 2) {
-      if (WaitOfReaction(20000) == 6) {
-        state += 1;
-      } else {
-        state = 1000;
-      } // wait of NO CARRIER
-    }
+int GSM_GPRS_Class::sendZimtPost(char *body) {
+  memset(GSM_string, 0, BUFFER_SIZE);
+  // wait until all outgoing data is sent
+  _HardSerial.flush();
 
-    if (state == 3) {
-      return 1; // HTTP GET successfully ... let's go ahead!
-    }
+  // clear incoming data buffer
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
 
-  } while (state <= 999);
+  _HardSerial.print("AT#SD=1,0,8080,\"piwik.contact.de\",0\r");
 
-  return 0; // ERROR ... no GPRS connect
+  // wait until all outgoing data is sent
+  _HardSerial.flush();
+
+  delay(2000);
+  char response[100];
+  readResponseIntoBuffer(response, sizeof(response), 4000);
+
+  if (!strstr(response, "CONNECT")) {
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
+
+  _HardSerial.print("POST /api/v1/collection/cdb_sensordaten HTTP/1.1\r\n");
+  _HardSerial.print("Host: piwik.contact.de:8080\r\n");
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");
+  _HardSerial.print("Authorization: Basic Y2FkZG9rOg==\r\n");
+  _HardSerial.print("Cookie: contact.usr=caddok; contact.sessionkey=25e1d2c4914446e59d953224c17724ae\r\n");
+  _HardSerial.print("Connection: keep-alive\r\n");
+  _HardSerial.print("Content-type: application/json\r\n");
+  _HardSerial.print("Content-length: ");
+  _HardSerial.print(strlen(body));
+  _HardSerial.print("\r\n\r\n");
+  _HardSerial.print(body);
+  _HardSerial.print("\r\n");
+  _HardSerial.flush();
+
+  // read HTTP answer
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 20000);
+  GSM_string[BUFFER_SIZE - 1] = '\0';
+
+  // clear incoming data buffer
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  // Exit data mode with escape sequence +++
+  // try as hard as possible with while loop >.>
+  delay(2000);
+  _HardSerial.print("+++"); // no linefeed here!
+  _HardSerial.flush();
+  delay(2000); // need to wait min 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+
+  if(!strstr(response, "OK")) {
+    Serial.println(F("ERROR: Egal.."));
+  }
+  else{
+    Serial.println(F("Exited socket data mode, try to close socket now"));
+  }
+
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000); // need to wait 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  if (!strstr(response, "OK")) {
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.println(F("Socket closed, everything went fine"));
+
+  return 1;
 }
 
 /*----------------------------------------------------------------------------------------------------------------------------------------------------

@@ -75,9 +75,12 @@ public:
   int  setClock();
   int  getTime();
 
-  int  connectGPRS(const char *APN, const char *USER, const char *PWD, const char* DHT);
-  int  sendHTTPGET(char server[50], char url[200], int port);
-  int  sendHTTP_POST_JSON(char server[50], char parameter_string[200], int port, char body[500]);
+  int  sendZimtPost(char *body);
+  int  sendZimtGet();
+  int  connectGPRS(const char *APN, const char *USER, const char *PWD);
+  int  sendOpenWeatherGet(char *url);
+  int  sendHTTPGET(char *server, char *url, int port);
+  int  sendHTTP_POST_JSON(char *server, char *url, int port, char *body);
   void disconnectGPRS();
 
 private:
