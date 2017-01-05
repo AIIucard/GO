@@ -5,10 +5,25 @@
 #include <dht11.h>
 #include <gsm_gprs_gps_mega.h>
 #include <Time.h>
+#include <Keypad.h>
 
 #define DHTPIN 22
 #define CS1 52 // SD Card
 #define CS2 49 // Shield
+#define BLED 40
+
+char key = NO_KEY;
+const byte rows = 4;
+const byte cols = 4;
+char keys[rows][cols] = {
+  {'4','3','2','1'},
+  {'8','7','6','5'},
+  {'C','B','A','9'},
+  {'G','F','E','D'}
+};
+byte rowPins[rows] = {33, 32, 31, 30}; //connect to the row pinouts of the keypad
+byte colPins[cols] = {37, 36, 35, 34}; //connect to the column pinouts of the keypad
+Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, rows, cols );
 
 struct ConfigData {
   const char *pin;
@@ -16,7 +31,6 @@ struct ConfigData {
   const char *boardid;
   const char *user;
   const char *password;
-  const char *dht;
   int timeoutInMillis = 2000;
 };
 
@@ -37,12 +51,13 @@ void setup() {
 
   pinMode(CS1, OUTPUT);
   pinMode(CS2, OUTPUT);
+  pinMode(BLED, OUTPUT);
 
   digitalWrite(CS1, LOW);
   digitalWrite(CS2, LOW);
+  digitalWrite(BLED, LOW);
 
-  while (!Serial)
-    ; // wait for serial port to connect. Needed for native USB port only
+  while (!Serial); // wait for serial port to connect. Needed for native USB port only
 
   digitalWrite(CS1, HIGH);
   while (!SD.begin(53)) {
@@ -89,9 +104,28 @@ void loop() {
   Serial.println();
   Serial.println(F("Entering loop"));
 
+  int i = 0;
+  Serial.println(F("Key Open"));
+  digitalWrite(BLED, HIGH);
+  while(i < 10){
+    delay(1000);
+    key = keypad.getKey();
+    if (key != NO_KEY){
+      sendError(key);
+      sendCloseToZimt();
+      Serial.print("---------------------");
+      Serial.println(key);
+    }
+    ++i;
+  }
+  digitalWrite(BLED, LOW);
+
+  Serial.println(F("Key Close"));
+
   StaticJsonBuffer<1000> jsonBuffer;
   JsonObject &root = jsonBuffer.createObject();
   root["cdb_classname"] = "cdb_sensordaten";
+  root["fs_board"] = config.boardid;
 
   readTemperatureAndHumidity(root);
   readTimestamp(root);
@@ -100,18 +134,15 @@ void loop() {
   digitalWrite(CS2, HIGH);
   readGPS(root);
 
-  // TODO: compare data with open weather map and create error if necessary
-
   // just debug info
   Serial.println(F("DEBUG: Following data is gathered"));
   root.printTo(Serial);
   Serial.println(F("\r\n---------------------------------"));
 
   // last but not least send data to zimt server
-
   retrieveOpenWeatherMapData(root);
   sendMessageToZimt(root);
-  sendCloseToZimt(root);
+  sendCloseToZimt();
   digitalWrite(CS2, LOW);
 
   // open file to store at sd card TODO: only when its not send
@@ -141,7 +172,6 @@ bool deserialize(ConfigData &data) {
   data.user = root[F("USER")].asString();
   data.password = root[F("PASSWORD")].asString();
   data.pin = root[F("PIN")].asString();
-  data.dht = root[F("DHT")].asString();
 
   return root.success();
 }
@@ -158,61 +188,6 @@ int connectToGPRS() {
   }
 
   return 1;
-}
-
-// TODO: we need to check if the connection is still OK and try to reconnect if
-// not
-void sendMessageToZimt(JsonObject &root) {
-  int status = GSM.Status();
-
-  root[F("fs_board")] = config.boardid;
-
-  // Not registered in network, need reconnect
-  if (status == 2) {
-    connectToGPRS();
-    status = GSM.Status();
-  }
-
-  if (status == 1) {
-    // send message to server
-    char body[400];
-    memset(body, 0, 400);
-    root.printTo(body, sizeof(body));
-
-    Serial.println(body);
-
-    // TODO api from config
-    int response = GSM.sendZimtPost(body);
-    if (response == 1) {
-      Serial.println(GSM.GSM_string);
-    }
-    else{
-      Serial.println("ERROR: Response was not 1");
-    }
-  } else {
-    Serial.println(F("ERROR: Couldn't fix network connection"));
-  }
-}
-
-void sendCloseToZimt(JsonObject &root) {
-  int status = GSM.Status();
-
-  if (status == 2) {
-    connectToGPRS();
-    status = GSM.Status();
-  }
-
-  if (status == 1) {
-    int response = GSM.sendZimtGet();
-    if (response == 1) {
-      Serial.println(GSM.GSM_string);
-    }
-    else{
-      Serial.println("ERROR: Response was not 1");
-    }
-  } else {
-    Serial.println(F("ERROR: Couldn't fix network connection"));
-  }
 }
 
 void setClock(){
@@ -254,6 +229,80 @@ void setClock(){
   setTime(atoi(hour), atoi(minute), atoi(second), atoi(day), atoi(month), atoi(year));
 }
 
+
+void sendMessageToZimt(JsonObject &root) {
+  int status = GSM.Status();
+
+  // Not registered in network, need reconnect
+  if (status == 2) {
+    connectToGPRS();
+    status = GSM.Status();
+  }
+
+  if (status == 1) {
+    // send message to server
+    char body[400];
+    memset(body, 0, 400);
+    root.printTo(body, sizeof(body));
+
+    Serial.println(body);
+
+    // TODO api from config
+    int response = GSM.sendZimtPost(body);
+    if (response == 1) {
+      Serial.println(GSM.GSM_string);
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
+    }
+  } else {
+    Serial.println(F("ERROR: Couldn't fix network connection"));
+  }
+}
+
+void sendError(char *key) {
+  int status = GSM.Status();
+
+  // Not registered in network, need reconnect
+  if (status == 2) {
+    connectToGPRS();
+    status = GSM.Status();
+  }
+
+  if (status == 1) {
+    int response = GSM.sendErrorToZimt(key, config.boardid);
+    if (response == 1) {
+      Serial.println(GSM.GSM_string);
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
+    }
+  } else {
+    Serial.println(F("ERROR: Couldn't fix network connection"));
+  }
+}
+
+void sendCloseToZimt() {
+  int status = GSM.Status();
+
+  if (status == 2) {
+    connectToGPRS();
+    status = GSM.Status();
+  }
+
+  if (status == 1) {
+    int response = GSM.sendZimtGet();
+    if (response == 1) {
+      Serial.println(GSM.GSM_string);
+    }
+    else{
+      Serial.println("ERROR: Response was not 1");
+    }
+  } else {
+    Serial.println(F("ERROR: Couldn't fix network connection"));
+  }
+}
+
 void readTimestamp(JsonObject& root){
   sprintf(Json_Time_String, "%04d-%02d-%02dT%02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
   root[F("datum")] = Json_Time_String;
@@ -261,82 +310,38 @@ void readTimestamp(JsonObject& root){
 
 void readTemperatureAndHumidity(JsonObject& root){
   if (DHT.read(DHTPIN) == DHTLIB_OK) {
-    root[F("luftfeuchtigkeit")] = DHT.humidity;
-    root[F("temperatur")] = DHT.temperature;
+    root[F("humidity")] = DHT.humidity;
+    root[F("temperature")] = DHT.temperature;
   }
-  /*
-  digitalWrite(CS1, HIGH);
-  int returnCode = 1; //value thats not a default DHTLIB value
-
-  if (strstr(config.dht, "DHT11")){
-    Serial.println(F("Read DHT 11 sensor"));
-    returnCode = DHT.read11(DHT_PIN);
-  }
-  else if (strstr(config.dht, "DHT22")){
-    Serial.println(F("Read DHT 22 sensor"));
-    returnCode = DHT.read22(DHT_PIN);
-  } else {
-    Serial.println("No DHT Setting in config");
-    Serial.println(config.dht);
-  }
-
-  switch (returnCode)
-  {
-    case DHTLIB_OK:
-    root[F("luftfeuchtigkeit")] = DHT.humidity;
-    root[F("temperatur")] = DHT.temperature;
-		break;
-    case DHTLIB_ERROR_CHECKSUM:
-		Serial.print("Checksum error,\t");
-		break;
-    case DHTLIB_ERROR_TIMEOUT:
-		Serial.print("Time out error,\t");
-		break;
-    case DHTLIB_ERROR_CONNECT:
-        Serial.print("Connect error,\t");
-        break;
-    case DHTLIB_ERROR_ACK_L:
-        Serial.print("Ack Low error,\t");
-        break;
-    case DHTLIB_ERROR_ACK_H:
-        Serial.print("Ack High error,\t");
-        break;
-    default:
-		Serial.print("Unknown error,\t");
-		break;
-  }*/
 }
 
 void readGPS(JsonObject &root) {
-  // GPS initialization
   if (GPS.initializeGPS())
     Serial.println(F("GPS Initialization completed"));
   else
     Serial.println(F("GPS Initialization can't completed"));
-  GPS.getGPS(); // get the current gps coordinates
-  // GPS-LED
-  if (GPS.coordinates[0] == 'n') { // valid gps signal yet
-    delay(50);                     // => no!... wait
-    GPS.setLED(1);
-    delay(50);
-    GPS.setLED(0);
-    delay(50);
-    GPS.setLED(1);
-    delay(50);
-    GPS.setLED(0);
-  }
 
-  // convert GPS coordinates to decimal
-  // TODO: trim the char arrays somehow...
-  // not that easy because if we manipulate the start of the pointer we might
-  // run into problems
-  // so instead of manipulating str_lon and str_lan pointers, create another
-  // pointer with offset?
+  GPS.getGPS();
   str_lon = getDecimalCoordinate(GPS.longitude);
   str_lan = getDecimalCoordinate(GPS.latitude);
+
+  while(str_lon == 0.00 && str_lan == 0.00){
+    GPS.getGPS();
+
+    str_lon = getDecimalCoordinate(GPS.longitude);
+    str_lan = getDecimalCoordinate(GPS.latitude);
+
+    if (GPS.coordinates[0] == 'n') {
+        delay(500);
+        GPS.setLED(1);
+        delay(500);
+        GPS.setLED(0);
+    }
+  }
+
   if(str_lon != 0.00 && str_lan != 0.00){
-    root["longitude"] = str_lon;
-    root["latitude"] = str_lan;
+    root["longitude"] = str_lon, 4;
+    root["latitude"] = str_lan, 4;
   }
 }
 
@@ -369,7 +374,6 @@ void retrieveOpenWeatherMapData(JsonObject &root) {
   // get current data from open weathermap
   StaticJsonBuffer<800> jsonWBuffer;
   int status = GSM.Status();
-  root[F("fs_board")] = config.boardid;
 
   // Not registered in network, need reconnect
   if (status == 2) {
@@ -379,17 +383,17 @@ void retrieveOpenWeatherMapData(JsonObject &root) {
 
   if (status == 1) {
     // send message to server
-    char openWeatherUrl[250];
-    memset(openWeatherUrl, 0, 250);
+    char openWeatherUrl[200];
+    memset(openWeatherUrl, 0, 200);
+    int firstLon = str_lon;
+    int endZifLon = (str_lon * 10000) - firstLon;
+    endZifLon = endZifLon % 10000;
 
-    // TODO: API Key from Config
-    if(str_lon == NULL && str_lan == NULL){
-      Serial.println("WARNING: Using fake coordinates for Openweathermap");
-      sprintf(openWeatherUrl, "/data/2.5/weather?lon=8.5839282&lat=53.5369201&units=metric&APPID=83513c44070d8498ed3f3b3ddd4cd628");
-    }
-    else{
-      sprintf(openWeatherUrl, "/data/2.5/weather?lon=%s&lat=%s&units=metric&APPID=83513c44070d8498ed3f3b3ddd4cd628", str_lon, str_lan);
-    }
+    int firstLan = str_lan;
+    int endZifLan = (str_lan * 10000) - firstLan;
+    endZifLan = endZifLan % 10000;
+
+    sprintf(openWeatherUrl, "/data/2.5/weather?lon=%i.%i&lat=%i.%i&units=metric&APPID=8652d302ad6d86ce7c6cbd2c676674f9", firstLon, endZifLon, firstLan, endZifLan);
 
     Serial.println(openWeatherUrl);
 
@@ -409,10 +413,10 @@ void retrieveOpenWeatherMapData(JsonObject &root) {
         }
         Serial.println(jsonMessage);
         JsonObject &weather = jsonWBuffer.parseObject(jsonMessage);
-        root[F("owm_temperatur")] = weather[F("main")][F("temp")];
+        root[F("owm_temperature")] = weather[F("main")][F("temp")];
         root[F("owm_longitude")] = weather[F("coord")][F("lon")];
         root[F("owm_latitude")] = weather[F("coord")][F("lat")];
-        root[F("owm_luftfeuchtigkeit")] = weather[F("main")][F("humidity")];
+        root[F("owm_humidity")] = weather[F("main")][F("humidity")];
         Serial.println();
       }
       else{
@@ -428,8 +432,6 @@ void retrieveOpenWeatherMapData(JsonObject &root) {
 }
 
 void writeToSdFile(JsonObject &root) {
-  // open the file. note that only one file can be open at a time,
-  // so you have to close this one before opening another.
   File myFile = SD.open("json.txt", FILE_WRITE);
   if (myFile) {
     Serial.println("Open file to buffer data");

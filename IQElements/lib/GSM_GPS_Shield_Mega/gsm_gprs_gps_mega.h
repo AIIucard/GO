@@ -75,6 +75,7 @@ public:
   int  setClock();
   int  getTime();
 
+  int  sendErrorToZimt(char key, char *id);
   int  sendZimtPost(char *body);
   int  sendZimtGet();
   int  connectGPRS(const char *APN, const char *USER, const char *PWD);

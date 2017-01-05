@@ -645,6 +645,107 @@ int GSM_GPRS_Class::sendZimtGet(){
   return 1;
 }
 
+int GSM_GPRS_Class::sendErrorToZimt(char key, char* id) {
+  memset(GSM_string, 0, BUFFER_SIZE);
+  // wait until all outgoing data is sent
+  _HardSerial.flush();
+
+  // clear incoming data buffer
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  _HardSerial.print("AT#SD=1,0,8080,\"piwik.contact.de\",0\r");
+
+  // wait until all outgoing data is sent
+  _HardSerial.flush();
+
+  delay(2000);
+  char response[100];
+  char body[300];
+  readResponseIntoBuffer(response, sizeof(response), 4000);
+
+  if (!strstr(response, "CONNECT")) {
+    Serial.print(F("ERROR: Socket connection could not be established: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.print(F("Socket connected: "));
+  Serial.println(response);
+
+  if(key == '1'){
+      sprintf(body, "{\"fehlercode\":\"1222\",\"fehlertitel\":\"Zeitüberschreitung\",\"fehlerkategorie\":2,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '2'){
+      sprintf(body, "{\"fehlercode\":\"1211\",\"fehlertitel\":\"Übertragungsfehler\",\"fehlerkategorie\":2,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '3'){
+      sprintf(body, "{\"fehlercode\":\"1311\",\"fehlertitel\":\"Sensordefekt\",\"fehlerkategorie\":2,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '4'){
+      sprintf(body, "{\"fehlercode\":\"1312\",\"fehlertitel\":\"Messabweichungen\",\"fehlerkategorie\":3,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '5'){
+      sprintf(body, "{\"fehlercode\":\"1342\",\"fehlertitel\":\"Speicherüberlauf\",\"fehlerkategorie\":1,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '6'){
+      sprintf(body, "{\"fehlercode\":\"1531\",\"fehlertitel\":\"Ladeprozessfehler\",\"fehlerkategorie\":2,\"product\":\"%s\"}\r\n", id);
+  }else if (key == '7'){
+      sprintf(body, "{\"fehlercode\":\"1341\",\"fehlertitel\":\"Speicherdefekt\",\"fehlerkategorie\":2,\"product\":\"%s\"}\r\n", id);
+  }else{
+      sprintf(body, "{\"fehlercode\":\"9999\",\"fehlertitel\":\"Unbekannt\",\"fehlerkategorie\":1,\"product\":\"%s\"}\r\n", id);
+  }
+
+  Serial.println(body);
+
+  //TODO cdb_fehlerdaten????
+  _HardSerial.print("POST /api/v1/collection/IQ_Fehler HTTP/1.1\r\n");
+  _HardSerial.print("Host: piwik.contact.de:8080\r\n");
+  _HardSerial.print("User-Agent: ArduinoMega\r\n");
+  _HardSerial.print("Authorization: Basic Y2FkZG9rOg==\r\n");
+  _HardSerial.print("Cookie: contact.usr=caddok; contact.sessionkey=25e1d2c4914446e59d953224c17724ae\r\n");
+  _HardSerial.print("Connection: keep-alive\r\n");
+  _HardSerial.print("Content-type: application/json\r\n");
+  _HardSerial.print("Content-length: ");
+  _HardSerial.print(strlen(body));
+  _HardSerial.print("\r\n\r\n");
+  _HardSerial.print(body);
+  _HardSerial.flush();
+
+  // read HTTP answer
+  readResponseIntoBuffer(GSM_string, BUFFER_SIZE, 20000);
+  GSM_string[BUFFER_SIZE - 1] = '\0';
+
+  // clear incoming data buffer
+  while (_HardSerial.available() > 0) {
+    _HardSerial.read();
+  }
+
+  // Exit data mode with escape sequence +++
+  // try as hard as possible with while loop >.>
+  delay(2000);
+  _HardSerial.print("+++"); // no linefeed here!
+  _HardSerial.flush();
+  delay(2000); // need to wait min 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 1000);
+
+  if(!strstr(response, "OK")) {
+    Serial.println(F("ERROR: Egal.."));
+  }
+  else{
+    Serial.println(F("Exited socket data mode, try to close socket now"));
+  }
+
+  _HardSerial.print("AT#SH=1\r");
+  _HardSerial.flush();
+  delay(2000); // need to wait 2 seconds
+  readResponseIntoBuffer(response, sizeof(response), 2000);
+
+  if (!strstr(response, "OK")) {
+    Serial.print(F("ERROR: Socket connection was not closed properly: "));
+    Serial.println(response);
+    return -1;
+  }
+  Serial.println(F("Socket closed, everything went fine"));
+
+  return 1;
+}
+
 int GSM_GPRS_Class::sendZimtPost(char *body) {
   memset(GSM_string, 0, BUFFER_SIZE);
   // wait until all outgoing data is sent
